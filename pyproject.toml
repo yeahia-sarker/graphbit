@@ -1,0 +1,152 @@
+[build-system]
+build-backend = "maturin"
+requires = ["maturin>=1.0,<2.0"]
+
+[tool.bandit]
+exclude_dirs = ["tests", "test"]
+skips = ["B101", "B601"]
+
+# Tool configurations
+[tool.black]
+extend-exclude = '''
+/(
+  # directories
+  \.eggs
+  | \.git
+  | \.hg
+  | \.mypy_cache
+  | \.tox
+  | \.venv
+  | _build
+  | buck-out
+  | build
+  | dist
+  | target
+)/
+'''
+include = '\.pyi?$'
+line-length = 200
+target-version = ['py310']
+
+[tool.coverage.report]
+exclude_lines = [
+  "pragma: no cover",
+  "def __repr__",
+  "if self.debug:",
+  "if settings.DEBUG",
+  "raise AssertionError",
+  "raise NotImplementedError",
+  "if 0:",
+  "if __name__ == .__main__.:",
+  "class .*\\bProtocol\\):",
+  "@(abc\\.)?abstractmethod"
+]
+
+[tool.coverage.run]
+omit = [
+  "*/tests/*",
+  "*/test_*",
+  "*/__pycache__/*",
+  "*/site-packages/*"
+]
+source = ["graphbit"]
+
+[tool.isort]
+ensure_newline_before_comments = true
+force_grid_wrap = 0
+include_trailing_comma = true
+known_first_party = ["graphbit"]
+line_length = 200
+multi_line_output = 3
+profile = "black"
+skip_gitignore = true
+use_parentheses = true
+
+[tool.mypy]
+check_untyped_defs = true
+disallow_incomplete_defs = true
+disallow_untyped_decorators = true
+disallow_untyped_defs = true
+ignore_missing_imports = true
+no_implicit_optional = true
+python_version = "3.10"
+strict_equality = true
+warn_no_return = true
+warn_redundant_casts = true
+warn_return_any = true
+warn_unreachable = true
+warn_unused_configs = true
+warn_unused_ignores = true
+
+[tool.poetry]
+authors = ["GraphBit Team"]
+description = "GraphBit - Advanced workflow automation and AI agent orchestration library"
+homepage = "https://github.com/InfinitiBit/graphbit"
+license = "proprietary"
+name = "graphbit"
+package-mode = false
+readme = "README.md"
+repository = "https://github.com/InfinitiBit/graphbit"
+version = "0.1.0"
+
+[tool.poetry.dependencies]
+aiofiles = ">=23.0.0"
+anthropic = ">=0.24.0"
+crewai = ">=0.41.0"
+# Core AI/ML dependencies
+langchain = ">=0.1.0"
+langchain-openai = ">=0.1.0"
+langgraph = ">=0.1.0"
+llama-index = ">=0.9.0"
+maturin = "^1.8.6"
+openai = ">=1.30.0"
+pydantic-ai = ">=0.0.5"
+python = ">=3.10,<3.13"
+# Utility dependencies
+python-dotenv = ">=1.0.0"
+qdrant-client = "^1.14.2"
+rich = ">=13.0.0"
+typer = ">=0.9.0"
+
+[tool.poetry.group.benchmarks.dependencies]
+matplotlib = ">=3.7.0"
+memory-profiler = ">=0.61.0"
+numpy = ">=1.24.0"
+pandas = ">=2.0.0"
+# Benchmarking specific dependencies
+psutil = ">=5.9.0"
+seaborn = ">=0.12.0"
+tabulate = ">=0.9.0"
+
+[tool.poetry.group.dev.dependencies]
+bandit = "^1.7.0"
+# Code quality tools
+black = "^23.0.0"
+detect-secrets = "^1.4.0"
+flake8 = "^6.0.0"
+flake8-bugbear = "^23.0.0"
+flake8-comprehensions = "^3.14.0"
+# Additional flake8 plugins
+flake8-docstrings = "^1.7.0"
+flake8-simplify = "^0.20.0"
+isort = "^5.12.0"
+mypy = "^1.0.0"
+# Pre-commit
+pre-commit = "^3.6.0"
+# Development dependencies
+pytest = ">=7.0.0"
+pytest-asyncio = ">=0.21.0"
+pytest-cov = ">=4.0.0"
+safety = "^2.3.0"
+
+[tool.pytest.ini_options]
+addopts = "-ra -q --strict-markers --strict-config"
+minversion = "7.0"
+python_files = [
+  "test_*.py",
+  "tests_*.py",
+  "*_test.py"
+]
+testpaths = [
+  "tests"
+]

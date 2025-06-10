@@ -1,0 +1,29 @@
+[dependencies]
+chrono = {workspace = true}
+futures = {workspace = true}
+graphbit-core = {path = "../core", features = ["python"]}
+num_cpus = "1.16"
+
+# Only use jemalloc on Unix systems (not Windows)
+[target.'cfg(unix)'.dependencies]
+jemallocator = {workspace = true}
+pyo3 = {workspace = true, features = ["extension-module"]}
+serde_json = {workspace = true}
+tokio = {workspace = true}
+
+[dependencies.pyo3-async-runtimes]
+features = ["tokio-runtime"]
+version = "0.24"
+
+[lib]
+crate-type = ["cdylib"]
+name = "graphbit"
+
+[package]
+authors = ["GraphBit Team"]
+description = "Python bindings for GraphBit agentic workflow automation"
+edition = "2021"
+license = "MIT"
+name = "graphbit"
+repository = "https://github.com/InfinitiBit/graphbit"
+version = "0.1.0"

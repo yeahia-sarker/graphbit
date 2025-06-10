@@ -1,0 +1,685 @@
+//! Graph-based workflow system for GraphBit
+//!
+//! This module provides a directed graph structure for defining and executing
+//! agentic workflows with proper dependency management and parallel execution.
+
+use crate::errors::{GraphBitError, GraphBitResult};
+use crate::types::NodeId;
+use petgraph::{
+    algo::{is_cyclic_directed, toposort},
+    graph::{DiGraph, NodeIndex},
+    Direction,
+};
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+
+/// A workflow graph that defines the structure and execution flow
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WorkflowGraph {
+    /// Graph structure
+    #[serde(skip)]
+    graph: DiGraph<WorkflowNode, WorkflowEdge>,
+    /// Mapping from NodeId to graph indices
+    #[serde(skip)]
+    node_map: HashMap<NodeId, NodeIndex>,
+    /// Serializable representation of nodes
+    nodes: HashMap<NodeId, WorkflowNode>,
+    /// Serializable representation of edges
+    edges: Vec<(NodeId, NodeId, WorkflowEdge)>,
+    /// Graph metadata
+    metadata: HashMap<String, serde_json::Value>,
+    /// Cached adjacency information for performance
+    #[serde(skip)]
+    dependencies_cache: HashMap<NodeId, Vec<NodeId>>,
+    #[serde(skip)]
+    dependents_cache: HashMap<NodeId, Vec<NodeId>>,
+    /// Cached root and leaf nodes
+    #[serde(skip)]
+    root_nodes_cache: Option<Vec<NodeId>>,
+    #[serde(skip)]
+    leaf_nodes_cache: Option<Vec<NodeId>>,
+}
+
+impl WorkflowGraph {
+    /// Create a new empty workflow graph
+    pub fn new() -> Self {
+        Self {
+            graph: DiGraph::new(),
+            node_map: HashMap::with_capacity(16), // Pre-allocate capacity
+            nodes: HashMap::with_capacity(16),    // Pre-allocate capacity
+            edges: Vec::with_capacity(16),        // Pre-allocate capacity
+            metadata: HashMap::new(),
+            dependencies_cache: HashMap::with_capacity(16),
+            dependents_cache: HashMap::with_capacity(16),
+            root_nodes_cache: None,
+            leaf_nodes_cache: None,
+        }
+    }
+
+    /// Invalidate caches when graph structure changes
+    fn invalidate_caches(&mut self) {
+        self.dependencies_cache.clear();
+        self.dependents_cache.clear();
+        self.root_nodes_cache = None;
+        self.leaf_nodes_cache = None;
+    }
+
+    /// Rebuild the graph structure from serialized data
+    /// This must be called after deserialization since graph and node_map are not serialized
+    pub fn rebuild_graph(&mut self) -> GraphBitResult<()> {
+        // Clear existing graph structures
+        self.graph = DiGraph::new();
+        self.node_map.clear();
+        self.invalidate_caches();
+
+        // Pre-allocate capacity based on existing data
+        self.node_map.reserve(self.nodes.len());
+
+        // Re-add all nodes to the graph
+        for (node_id, node) in &self.nodes {
+            let graph_index = self.graph.add_node(node.clone());
+            self.node_map.insert(node_id.clone(), graph_index);
+        }
+
+        // Re-add all edges to the graph
+        for (from, to, edge) in &self.edges {
+            let from_index = self
+                .node_map
+                .get(from)
+                .ok_or_else(|| GraphBitError::graph(format!("Source node {} not found", from)))?;
+
+            let to_index = self
+                .node_map
+                .get(to)
+                .ok_or_else(|| GraphBitError::graph(format!("Target node {} not found", to)))?;
+
+            self.graph.add_edge(*from_index, *to_index, edge.clone());
+        }
+
+        Ok(())
+    }
+
+    /// Add a node to the graph
+    pub fn add_node(&mut self, node: WorkflowNode) -> GraphBitResult<()> {
+        let node_id = node.id.clone();
+
+        if self.nodes.contains_key(&node_id) {
+            return Err(GraphBitError::graph(format!(
+                "Node with ID {} already exists",
+                node_id
+            )));
+        }
+
+        let graph_index = self.graph.add_node(node.clone());
+        self.node_map.insert(node_id.clone(), graph_index);
+        self.nodes.insert(node_id, node);
+
+        // Invalidate caches since graph structure changed
+        self.invalidate_caches();
+
+        Ok(())
+    }
+
+    /// Add an edge between two nodes
+    pub fn add_edge(&mut self, from: NodeId, to: NodeId, edge: WorkflowEdge) -> GraphBitResult<()> {
+        let from_index = self
+            .node_map
+            .get(&from)
+            .ok_or_else(|| GraphBitError::graph(format!("Source node {} not found", from)))?;
+
+        let to_index = self
+            .node_map
+            .get(&to)
+            .ok_or_else(|| GraphBitError::graph(format!("Target node {} not found", to)))?;
+
+        self.graph.add_edge(*from_index, *to_index, edge.clone());
+        self.edges.push((from, to, edge));
+
+        // Invalidate caches since graph structure changed
+        self.invalidate_caches();
+
+        Ok(())
+    }
+
+    /// Remove a node from the graph
+    pub fn remove_node(&mut self, node_id: &NodeId) -> GraphBitResult<()> {
+        let graph_index = self
+            .node_map
+            .remove(node_id)
+            .ok_or_else(|| GraphBitError::graph(format!("Node {} not found", node_id)))?;
+
+        self.graph.remove_node(graph_index);
+        self.nodes.remove(node_id);
+
+        // Remove edges involving this node
+        self.edges
+            .retain(|(from, to, _)| from != node_id && to != node_id);
+
+        // Invalidate caches since graph structure changed
+        self.invalidate_caches();
+
+        Ok(())
+    }
+
+    /// Get a node by ID
+    #[inline]
+    pub fn get_node(&self, node_id: &NodeId) -> Option<&WorkflowNode> {
+        self.nodes.get(node_id)
+    }
+
+    /// Get all nodes
+    #[inline]
+    pub fn get_nodes(&self) -> &HashMap<NodeId, WorkflowNode> {
+        &self.nodes
+    }
+
+    /// Get all edges
+    #[inline]
+    pub fn get_edges(&self) -> &[(NodeId, NodeId, WorkflowEdge)] {
+        &self.edges
+    }
+
+    /// Check if the graph contains cycles
+    pub fn has_cycles(&self) -> bool {
+        is_cyclic_directed(&self.graph)
+    }
+
+    /// Get topological ordering of nodes
+    pub fn topological_sort(&self) -> GraphBitResult<Vec<NodeId>> {
+        let sorted_indices = toposort(&self.graph, None).map_err(|_| {
+            GraphBitError::graph("Graph contains cycles - cannot perform topological sort")
+        })?;
+
+        // Pre-allocate with known capacity
+        let mut sorted_nodes = Vec::with_capacity(sorted_indices.len());
+        for index in sorted_indices {
+            // Find the NodeId for this graph index
+            for (node_id, &node_index) in &self.node_map {
+                if node_index == index {
+                    sorted_nodes.push(node_id.clone());
+                    break;
+                }
+            }
+        }
+
+        Ok(sorted_nodes)
+    }
+
+    /// Get dependencies (incoming edges) for a node with caching
+    pub fn get_dependencies(&mut self, node_id: &NodeId) -> Vec<NodeId> {
+        // Check cache first
+        if let Some(deps) = self.dependencies_cache.get(node_id) {
+            return deps.clone();
+        }
+
+        let mut dependencies = Vec::new();
+
+        if let Some(&node_index) = self.node_map.get(node_id) {
+            let incoming = self
+                .graph
+                .neighbors_directed(node_index, Direction::Incoming);
+
+            for neighbor_index in incoming {
+                // Find the NodeId for this neighbor
+                for (neighbor_id, &idx) in &self.node_map {
+                    if idx == neighbor_index {
+                        dependencies.push(neighbor_id.clone());
+                        break;
+                    }
+                }
+            }
+        }
+
+        // Cache the result
+        self.dependencies_cache
+            .insert(node_id.clone(), dependencies.clone());
+        dependencies
+    }
+
+    /// Get dependents (outgoing edges) for a node with caching
+    pub fn get_dependents(&mut self, node_id: &NodeId) -> Vec<NodeId> {
+        // Check cache first
+        if let Some(deps) = self.dependents_cache.get(node_id) {
+            return deps.clone();
+        }
+
+        let mut dependents = Vec::new();
+
+        if let Some(&node_index) = self.node_map.get(node_id) {
+            let outgoing = self
+                .graph
+                .neighbors_directed(node_index, Direction::Outgoing);
+
+            for neighbor_index in outgoing {
+                // Find the NodeId for this neighbor
+                for (neighbor_id, &idx) in &self.node_map {
+                    if idx == neighbor_index {
+                        dependents.push(neighbor_id.clone());
+                        break;
+                    }
+                }
+            }
+        }
+
+        // Cache the result
+        self.dependents_cache
+            .insert(node_id.clone(), dependents.clone());
+        dependents
+    }
+
+    /// Get root nodes (nodes with no dependencies) with caching
+    pub fn get_root_nodes(&mut self) -> Vec<NodeId> {
+        if let Some(ref roots) = self.root_nodes_cache {
+            return roots.clone();
+        }
+
+        let node_ids: Vec<NodeId> = self.nodes.keys().cloned().collect();
+        let roots: Vec<NodeId> = node_ids
+            .into_iter()
+            .filter(|node_id| self.get_dependencies(node_id).is_empty())
+            .collect();
+
+        self.root_nodes_cache = Some(roots.clone());
+        roots
+    }
+
+    /// Get leaf nodes (nodes with no dependents) with caching
+    pub fn get_leaf_nodes(&mut self) -> Vec<NodeId> {
+        if let Some(ref leaves) = self.leaf_nodes_cache {
+            return leaves.clone();
+        }
+
+        let node_ids: Vec<NodeId> = self.nodes.keys().cloned().collect();
+        let leaves: Vec<NodeId> = node_ids
+            .into_iter()
+            .filter(|node_id| self.get_dependents(node_id).is_empty())
+            .collect();
+
+        self.leaf_nodes_cache = Some(leaves.clone());
+        leaves
+    }
+
+    /// Check if a node is ready to execute (all dependencies completed)
+    pub fn is_node_ready(
+        &mut self,
+        node_id: &NodeId,
+        completed_nodes: &std::collections::HashSet<NodeId>,
+    ) -> bool {
+        let dependencies = self.get_dependencies(node_id);
+        dependencies.iter().all(|dep| completed_nodes.contains(dep))
+    }
+
+    /// Get the next executable nodes (optimized version)
+    pub fn get_next_executable_nodes(
+        &mut self,
+        completed_nodes: &std::collections::HashSet<NodeId>,
+        running_nodes: &std::collections::HashSet<NodeId>,
+    ) -> Vec<NodeId> {
+        // Pre-allocate with estimated capacity
+        let mut executable = Vec::with_capacity(8);
+
+        // Collect node IDs first to avoid borrow conflicts
+        let node_ids: Vec<NodeId> = self.nodes.keys().cloned().collect();
+
+        for node_id in node_ids {
+            if !completed_nodes.contains(&node_id)
+                && !running_nodes.contains(&node_id)
+                && self.is_node_ready(&node_id, completed_nodes)
+            {
+                executable.push(node_id);
+            }
+        }
+
+        executable
+    }
+
+    /// Validate the graph structure
+    pub fn validate(&self) -> GraphBitResult<()> {
+        // Check for cycles
+        if self.has_cycles() {
+            return Err(GraphBitError::graph("Workflow graph contains cycles"));
+        }
+
+        // Check that all edge endpoints exist
+        for (from, to, _) in &self.edges {
+            if !self.nodes.contains_key(from) {
+                return Err(GraphBitError::graph(format!(
+                    "Edge references non-existent source node: {}",
+                    from
+                )));
+            }
+            if !self.nodes.contains_key(to) {
+                return Err(GraphBitError::graph(format!(
+                    "Edge references non-existent target node: {}",
+                    to
+                )));
+            }
+        }
+
+        // Validate individual nodes
+        for node in self.nodes.values() {
+            node.validate()?;
+        }
+
+        Ok(())
+    }
+
+    /// Set metadata
+    pub fn set_metadata(&mut self, key: String, value: serde_json::Value) {
+        self.metadata.insert(key, value);
+    }
+
+    /// Get metadata
+    pub fn get_metadata(&self, key: &str) -> Option<&serde_json::Value> {
+        self.metadata.get(key)
+    }
+
+    /// Get number of nodes
+    #[inline]
+    pub fn node_count(&self) -> usize {
+        self.nodes.len()
+    }
+
+    /// Get number of edges
+    #[inline]
+    pub fn edge_count(&self) -> usize {
+        self.edges.len()
+    }
+}
+
+impl Default for WorkflowGraph {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// A node in the workflow graph representing a single execution unit
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WorkflowNode {
+    /// Unique identifier for the node
+    pub id: NodeId,
+    /// Human-readable name
+    pub name: String,
+    /// Description of what this node does
+    pub description: String,
+    /// Type of the node
+    pub node_type: NodeType,
+    /// Configuration for the node
+    pub config: HashMap<String, serde_json::Value>,
+    /// Input schema for validation
+    pub input_schema: Option<serde_json::Value>,
+    /// Output schema for validation
+    pub output_schema: Option<serde_json::Value>,
+    /// Retry configuration
+    pub retry_config: RetryConfig,
+    /// Timeout in seconds
+    pub timeout_seconds: Option<u64>,
+    /// Tags for categorization
+    pub tags: Vec<String>,
+}
+
+impl WorkflowNode {
+    /// Create a new workflow node
+    pub fn new(
+        name: impl Into<String>,
+        description: impl Into<String>,
+        node_type: NodeType,
+    ) -> Self {
+        Self {
+            id: NodeId::new(),
+            name: name.into(),
+            description: description.into(),
+            node_type,
+            config: HashMap::with_capacity(8), // Pre-allocate for config parameters
+            input_schema: None,
+            output_schema: None,
+            retry_config: RetryConfig::default(),
+            timeout_seconds: None,
+            tags: Vec::new(),
+        }
+    }
+
+    /// Set node configuration
+    pub fn with_config(mut self, key: String, value: serde_json::Value) -> Self {
+        self.config.insert(key, value);
+        self
+    }
+
+    /// Set input schema
+    pub fn with_input_schema(mut self, schema: serde_json::Value) -> Self {
+        self.input_schema = Some(schema);
+        self
+    }
+
+    /// Set output schema
+    pub fn with_output_schema(mut self, schema: serde_json::Value) -> Self {
+        self.output_schema = Some(schema);
+        self
+    }
+
+    /// Set retry configuration
+    pub fn with_retry_config(mut self, retry_config: RetryConfig) -> Self {
+        self.retry_config = retry_config;
+        self
+    }
+
+    /// Set timeout
+    pub fn with_timeout(mut self, timeout_seconds: u64) -> Self {
+        self.timeout_seconds = Some(timeout_seconds);
+        self
+    }
+
+    /// Add tags
+    pub fn with_tags(mut self, tags: Vec<String>) -> Self {
+        self.tags = tags;
+        self
+    }
+
+    /// Validate the node configuration
+    pub fn validate(&self) -> GraphBitResult<()> {
+        // Validate node type specific requirements
+        match &self.node_type {
+            NodeType::Agent { agent_id, .. } => {
+                if agent_id.to_string().is_empty() {
+                    return Err(GraphBitError::graph(
+                        "Agent node must have a valid agent_id",
+                    ));
+                }
+            }
+            NodeType::Condition { expression } => {
+                if expression.is_empty() {
+                    return Err(GraphBitError::graph(
+                        "Condition node must have an expression",
+                    ));
+                }
+            }
+            NodeType::Transform { transformation } => {
+                if transformation.is_empty() {
+                    return Err(GraphBitError::graph(
+                        "Transform node must have a transformation",
+                    ));
+                }
+            }
+            NodeType::DocumentLoader {
+                document_type,
+                source_path,
+                ..
+            } => {
+                if document_type.is_empty() {
+                    return Err(GraphBitError::graph(
+                        "DocumentLoader node must have a document_type",
+                    ));
+                }
+                if source_path.is_empty() {
+                    return Err(GraphBitError::graph(
+                        "DocumentLoader node must have a source_path",
+                    ));
+                }
+                // Validate supported document types
+                let supported_types = ["pdf", "txt", "docx", "json", "csv", "xml", "html"];
+                if !supported_types.contains(&document_type.to_lowercase().as_str()) {
+                    return Err(GraphBitError::graph(format!(
+                        "Unsupported document type: {}. Supported types: {:?}",
+                        document_type, supported_types
+                    )));
+                }
+            }
+            _ => {}
+        }
+
+        Ok(())
+    }
+}
+
+/// Types of workflow nodes
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type")]
+pub enum NodeType {
+    /// Agent execution node
+    Agent {
+        agent_id: crate::types::AgentId,
+        prompt_template: String,
+    },
+    /// Conditional branching node
+    Condition { expression: String },
+    /// Data transformation node
+    Transform { transformation: String },
+    /// Parallel execution splitter
+    Split,
+    /// Parallel execution joiner
+    Join,
+    /// Delay/wait node
+    Delay { duration_seconds: u64 },
+    /// HTTP request node
+    HttpRequest {
+        url: String,
+        method: String,
+        headers: HashMap<String, String>,
+    },
+    /// Custom function node
+    Custom { function_name: String },
+    /// Document loading node
+    DocumentLoader {
+        document_type: String,
+        source_path: String,
+        encoding: Option<String>,
+    },
+}
+
+/// An edge in the workflow graph representing data flow and dependencies
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WorkflowEdge {
+    /// Type of the edge
+    pub edge_type: EdgeType,
+    /// Condition for edge traversal
+    pub condition: Option<String>,
+    /// Data transformation applied to values flowing through this edge
+    pub transform: Option<String>,
+    /// Edge metadata
+    pub metadata: HashMap<String, serde_json::Value>,
+}
+
+impl WorkflowEdge {
+    /// Create a new data flow edge
+    pub fn data_flow() -> Self {
+        Self {
+            edge_type: EdgeType::DataFlow,
+            condition: None,
+            transform: None,
+            metadata: HashMap::with_capacity(4), // Pre-allocate for metadata
+        }
+    }
+
+    /// Create a new control flow edge
+    pub fn control_flow() -> Self {
+        Self {
+            edge_type: EdgeType::ControlFlow,
+            condition: None,
+            transform: None,
+            metadata: HashMap::with_capacity(4), // Pre-allocate for metadata
+        }
+    }
+
+    /// Create a conditional edge
+    pub fn conditional(condition: impl Into<String>) -> Self {
+        Self {
+            edge_type: EdgeType::Conditional,
+            condition: Some(condition.into()),
+            transform: None,
+            metadata: HashMap::with_capacity(4), // Pre-allocate for metadata
+        }
+    }
+
+    /// Add a transformation to the edge
+    pub fn with_transform(mut self, transform: impl Into<String>) -> Self {
+        self.transform = Some(transform.into());
+        self
+    }
+
+    /// Add metadata to the edge
+    pub fn with_metadata(mut self, key: String, value: serde_json::Value) -> Self {
+        self.metadata.insert(key, value);
+        self
+    }
+}
+
+/// Types of edges in the workflow graph
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum EdgeType {
+    /// Data flows from one node to another
+    DataFlow,
+    /// Control dependency (execution order)
+    ControlFlow,
+    /// Conditional edge (only traversed if condition is true)
+    Conditional,
+    /// Error handling edge
+    ErrorHandling,
+}
+
+/// Retry configuration for node execution
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RetryConfig {
+    /// Maximum number of retry attempts
+    pub max_attempts: u32,
+    /// Delay between retries in seconds
+    pub delay_seconds: u64,
+    /// Whether to use exponential backoff
+    pub exponential_backoff: bool,
+    /// Maximum delay for exponential backoff
+    pub max_delay_seconds: u64,
+}
+
+impl RetryConfig {
+    /// Create a new retry configuration
+    pub fn new(max_attempts: u32, delay_seconds: u64) -> Self {
+        Self {
+            max_attempts,
+            delay_seconds,
+            exponential_backoff: false,
+            max_delay_seconds: 300, // 5 minutes
+        }
+    }
+
+    /// Enable exponential backoff
+    pub fn with_exponential_backoff(mut self, max_delay_seconds: u64) -> Self {
+        self.exponential_backoff = true;
+        self.max_delay_seconds = max_delay_seconds;
+        self
+    }
+
+    /// Calculate delay for a given attempt
+    pub fn calculate_delay(&self, attempt: u32) -> u64 {
+        if self.exponential_backoff {
+            let delay = self.delay_seconds * 2_u64.pow(attempt.saturating_sub(1));
+            delay.min(self.max_delay_seconds)
+        } else {
+            self.delay_seconds
+        }
+    }
+}
+
+impl Default for RetryConfig {
+    fn default() -> Self {
+        Self::new(3, 1)
+    }
+}

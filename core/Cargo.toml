@@ -1,0 +1,40 @@
+[dependencies]
+anyhow = {workspace = true}
+async-trait = {workspace = true}
+chrono = {version = "0.4", features = ["serde"]}
+docx-rs = "0.4"
+futures = {workspace = true}
+# Document processing dependencies
+lopdf = "0.32"
+petgraph = {workspace = true}
+rand = "0.8"
+regex = {workspace = true}
+reqwest = {workspace = true}
+serde = {workspace = true}
+serde_json = {workspace = true}
+thiserror = {workspace = true}
+tokio = {workspace = true}
+tracing = {workspace = true}
+tracing-subscriber = {workspace = true}
+uuid = {workspace = true}
+
+# Only use jemalloc on Unix systems (not Windows)
+[target.'cfg(unix)'.dependencies]
+jemallocator = {workspace = true}
+
+[dependencies.pyo3]
+optional = true
+workspace = true
+
+[features]
+default = []
+python = ["pyo3"]
+
+[package]
+authors = ["GraphBit Team"]
+description = "Core engine for GraphBit agentic workflow automation"
+edition = "2021"
+license = "MIT"
+name = "graphbit-core"
+repository = "https://github.com/InfinitiBit/graphbit"
+version = "0.1.0"

@@ -1,0 +1,236 @@
+# Pre-commit configuration for GraphBit
+# A hybrid Rust/Python project with comprehensive code quality checks
+
+default_language_version:
+  python: python3.11
+
+repos:
+  # Pre-commit hooks for general file handling
+- repo: https://github.com/pre-commit/pre-commit-hooks
+  rev: v5.0.0
+  hooks:
+  - id: trailing-whitespace
+    exclude: ^(.*\.md|.*\.rst)$
+  - id: end-of-file-fixer
+  - id: check-yaml
+    args: [--unsafe]
+  - id: check-toml
+  - id: check-json
+  - id: check-xml
+  - id: check-merge-conflict
+  - id: check-case-conflict
+  - id: check-symlinks
+  - id: check-executables-have-shebangs
+  - id: check-shebang-scripts-are-executable
+  - id: fix-byte-order-marker
+  - id: mixed-line-ending
+    args: [--fix=lf]
+  - id: check-added-large-files
+    args: [--maxkb=1000]
+
+  # Python Code Formatting
+- repo: https://github.com/psf/black
+  rev: 25.1.0
+  hooks:
+  - id: black
+    language_version: python3.11
+    args: [--line-length=200]
+    files: ^(tests/.*\.py|benchmarks/.*\.py|examples/.*\.py|scripts/.*\.py)$
+
+  # Python Import Sorting
+- repo: https://github.com/pycqa/isort
+  rev: 6.0.1
+  hooks:
+  - id: isort
+    args: [--profile=black, --line-length=200]
+    files: ^(tests/.*\.py|benchmarks/.*\.py|examples/.*\.py|scripts/.*\.py)$
+
+  # Python Linting
+- repo: https://github.com/pycqa/flake8
+  rev: 7.2.0
+  hooks:
+  - id: flake8
+    args: [--max-line-length=200, '--extend-ignore=E203,W503']
+    files: ^(tests/.*\.py|benchmarks/.*\.py|examples/.*\.py|scripts/.*\.py)$
+    additional_dependencies:
+    - flake8-docstrings
+    - flake8-bugbear
+    - flake8-comprehensions
+    - flake8-simplify
+
+  # Python Type Checking
+- repo: https://github.com/pre-commit/mirrors-mypy
+  rev: v1.16.0
+  hooks:
+  - id: mypy
+    args: [--ignore-missing-imports, --no-strict-optional]
+    files: ^(tests/.*\.py|benchmarks/.*\.py|examples/.*\.py|scripts/.*\.py)$
+    additional_dependencies:
+    - types-requests
+    - types-python-dateutil
+
+  # Python Security Checks
+- repo: https://github.com/pycqa/bandit
+  rev: 1.8.3
+  hooks:
+  - id: bandit
+    args: [-r, '--skip=B101,B601']
+    files: ^(tests/.*\.py|benchmarks/.*\.py|examples/.*\.py|scripts/.*\.py)$
+
+  # Python Dependency Safety Check
+- repo: https://github.com/Lucas-C/pre-commit-hooks-safety
+  rev: v1.4.2
+  hooks:
+  - id: python-safety-dependencies-check
+    files: ^(pyproject\.toml|poetry\.lock)$
+
+  # Rust Formatting
+- repo: https://github.com/doublify/pre-commit-rust
+  rev: v1.0
+  hooks:
+  - id: fmt
+    name: Rust fmt
+    args: [--all, --]
+
+  # Rust Linting
+- repo: https://github.com/doublify/pre-commit-rust
+  rev: v1.0
+  hooks:
+  - id: clippy
+    name: Rust clippy
+    args: [--workspace, --all-targets, --all-features, --, -D, warnings]
+
+  # Rust Security Audit
+- repo: https://github.com/cathiele/pre-commit-rust
+  rev: v0.1.0
+  hooks:
+  - id: cargo-audit
+    name: Rust security audit
+
+  # TOML Formatting and Validation
+- repo: https://github.com/macisamuele/language-formatters-pre-commit-hooks
+  rev: v2.14.0
+  hooks:
+  - id: pretty-format-toml
+    args: [--autofix]
+    files: ^.*\.toml$
+
+  # YAML Formatting
+- repo: https://github.com/macisamuele/language-formatters-pre-commit-hooks
+  rev: v2.14.0
+  hooks:
+  - id: pretty-format-yaml
+    args: [--autofix, --indent, '2']
+    files: ^.*\.ya?ml$
+
+  # Secret Detection
+- repo: https://github.com/Yelp/detect-secrets
+  rev: v1.5.0
+  hooks:
+  - id: detect-secrets
+    args: [--baseline, .secrets.baseline]
+
+  # Spell Checking
+- repo: https://github.com/crate-ci/typos
+  rev: v1
+  hooks:
+  - id: typos
+    exclude: ^(Cargo\.lock|poetry\.lock|CHANGELOG\.md)$
+
+
+
+  # Dockerfile Linting (if any Dockerfiles exist)
+- repo: https://github.com/hadolint/hadolint
+  rev: v2.13.1-beta
+  hooks:
+  - id: hadolint-docker
+    files: ^.*Dockerfile.*$
+
+  # Shell Script Linting
+- repo: https://github.com/shellcheck-py/shellcheck-py
+  rev: v0.10.0.1
+  hooks:
+  - id: shellcheck
+    files: ^.*\.(sh|bash)$
+
+  # Commit Message Linting
+- repo: https://github.com/commitizen-tools/commitizen
+  rev: v4.8.3
+  hooks:
+  - id: commitizen
+    stages: [commit-msg]
+
+  # Local hooks for custom checks
+- repo: local
+  hooks:
+      # Rust tests (fast subset)
+  - id: rust-test-unit
+    name: Rust unit tests
+    entry: cargo test --workspace
+    language: system
+    files: ^(src/.*\.rs|core/src/.*\.rs)$
+    pass_filenames: false
+
+      # Python tests (fast subset)
+  - id: python-test-unit
+    name: Python unit tests
+    entry: bash -c 'cd tests/python_integration_tests && python -m pytest -x --tb=short'
+    language: system
+    files: ^tests/python_integration_tests/.*\.py$
+    pass_filenames: false
+
+      # Build check for Rust
+  - id: rust-build-check
+    name: Rust build check
+    entry: cargo check --workspace --all-targets
+    language: system
+    files: ^(src/.*\.rs|core/src/.*\.rs|python/src/.*\.rs|Cargo\.toml|.*/Cargo\.toml)$
+    pass_filenames: false
+
+      # Python build check
+  - id: python-build-check
+    name: Python build check
+    entry: poetry check
+    language: system
+    files: ^(pyproject\.toml|poetry\.lock)$
+    pass_filenames: false
+
+      # Dependency vulnerability check
+  - id: cargo-deny
+    name: Cargo deny check
+    entry: bash -c 'if command -v cargo-deny &> /dev/null; then cargo deny check; else echo "cargo-deny not installed, skipping"; fi'
+    language: system
+    files: ^(Cargo\.toml|Cargo\.lock|.*/Cargo\.toml)$
+    pass_filenames: false
+
+      # License check
+  - id: license-check
+    name: License header check
+    entry: bash -c 'find src core/src python/src -name "*.rs" -exec grep -L "Copyright\|License\|SPDX" {} + | head -5'
+    language: system
+    files: ^(src/.*\.rs|core/src/.*\.rs|python/src/.*\.rs)$
+    pass_filenames: false
+
+# Configuration for specific hooks
+ci:
+  autoupdate_schedule: monthly
+  autoupdate_commit_msg: 'chore: update pre-commit hooks'
+
+# Exclude certain files/directories
+exclude: |
+  (?x)^(
+    target/|
+    Cargo\.lock|
+    poetry\.lock|
+    \.git/|
+    \.pytest_cache/|
+    __pycache__/|
+    \.mypy_cache/|
+    \.venv/|
+    venv/|
+    \.env|
+    \.coverage|
+    htmlcov/|
+    logs/|
+    \.log$
+  )$

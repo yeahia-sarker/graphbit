@@ -1,0 +1,13 @@
+name: graphbit
+channels:
+- conda-forge
+- defaults
+dependencies:
+- python>=3.10
+- pip
+- setuptools
+- wheel
+- git                # For version control operations
+- pip:
+  - poetry>=1.4.0    # Poetry for dependency management
+  - maturin          # For Rust-Python bindings
