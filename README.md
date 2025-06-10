@@ -113,12 +113,6 @@ print(f"Active tasks: {stats.current_active_tasks}")
 print(f"Execution time: {result.execution_time_ms()}ms")
 ```
 
-## ⚠️ Current Status
-
-**Early Development** - APIs may change, limited ecosystem, documentation in progress.
-
-**Performance** - Benefits most apparent in CPU-intensive workflows and complex error handling scenarios.
-
 ## 🤝 Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup and guidelines.
