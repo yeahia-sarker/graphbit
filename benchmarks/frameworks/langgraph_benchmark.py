@@ -2,10 +2,9 @@
 
 import asyncio
 import os
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional
 
 from langchain.schema import HumanMessage
-from langchain_openai import ChatOpenAI
 from langgraph.graph import END, StateGraph
 from typing_extensions import TypedDict
 
@@ -18,9 +17,10 @@ from .common import (
     SIMPLE_TASK_PROMPT,
     BaseBenchmark,
     BenchmarkMetrics,
+    LLMConfig,
+    LLMProvider,
     calculate_throughput,
     count_tokens_estimate,
-    get_standard_llm_config,
 )
 
 
@@ -35,7 +35,6 @@ class SimpleState(TypedDict):
 class WorkflowState(TypedDict):
     """State for complex workflow execution."""
 
-    messages: List[Any]
     current_step: str
     results: Dict[str, str]
     context: str
@@ -48,23 +47,68 @@ class LangGraphBenchmark(BaseBenchmark):
     def __init__(self, config: Dict[str, Any]):
         """Initialize LangGraph benchmark with configuration."""
         super().__init__(config)
-        self.llm: Optional[ChatOpenAI] = None
+        self.llm: Optional[Any] = None
         self.graphs: Dict[str, Any] = {}
+
+    def _get_llm_params(self) -> tuple[int, float]:
+        """Get max_tokens and temperature from configuration."""
+        llm_config_obj: LLMConfig | None = self.config.get("llm_config")
+        if not llm_config_obj:
+            raise ValueError("LLMConfig not found in configuration")
+        return llm_config_obj.max_tokens, llm_config_obj.temperature
 
     async def setup(self) -> None:
         """Set up LangGraph for benchmarking."""
         from pydantic import SecretStr
 
-        llm_config = get_standard_llm_config(self.config)
-        api_key = os.getenv("OPENAI_API_KEY") or llm_config["api_key"]
-        if not api_key:
-            raise ValueError("OpenAI API key not found in environment or config")
+        llm_config_obj: LLMConfig | None = self.config.get("llm_config")
+        if not llm_config_obj:
+            raise ValueError("LLMConfig not found in configuration")
 
-        self.llm = ChatOpenAI(
-            model=llm_config["model"],
-            api_key=SecretStr(api_key),
-            temperature=llm_config["temperature"],
-        )
+        max_tokens, temperature = self._get_llm_params()
+
+        if llm_config_obj.provider == LLMProvider.OPENAI:
+            api_key = llm_config_obj.api_key or os.getenv("OPENAI_API_KEY")
+            if not api_key:
+                raise ValueError("OpenAI API key not found in environment or config")
+
+            from langchain_openai import ChatOpenAI
+
+            self.llm = ChatOpenAI(
+                model=llm_config_obj.model,
+                api_key=SecretStr(api_key),
+                temperature=temperature,
+                max_tokens=max_tokens,
+            )
+
+        elif llm_config_obj.provider == LLMProvider.ANTHROPIC:
+            api_key = llm_config_obj.api_key or os.getenv("ANTHROPIC_API_KEY")
+            if not api_key:
+                raise ValueError("Anthropic API key not found in environment or config")
+
+            from langchain_anthropic import ChatAnthropic
+
+            self.llm = ChatAnthropic(
+                model=llm_config_obj.model,
+                api_key=SecretStr(api_key),
+                temperature=temperature,
+                max_tokens=max_tokens,
+            )
+
+        elif llm_config_obj.provider == LLMProvider.OLLAMA:
+            base_url = llm_config_obj.base_url or "http://localhost:11434"
+
+            from langchain_ollama import ChatOllama
+
+            self.llm = ChatOllama(
+                model=llm_config_obj.model,
+                base_url=base_url,
+                temperature=temperature,
+                num_predict=max_tokens,
+            )
+
+        else:
+            raise ValueError(f"Unsupported provider for LangGraph: {llm_config_obj.provider}")
 
         self._setup_graphs()
 
@@ -101,9 +145,8 @@ class LangGraphBenchmark(BaseBenchmark):
         """Create a sequential pipeline graph."""
 
         def process_step(state: WorkflowState) -> WorkflowState:
-            messages = state["messages"]
             current_step = state["current_step"]
-            results = state["results"]
+            results = state["results"].copy()  # Make a copy to avoid mutation
             step_data = state["step_data"]
 
             task = step_data.get(current_step, "")
@@ -111,64 +154,119 @@ class LangGraphBenchmark(BaseBenchmark):
             context = " | ".join(context_parts) if context_parts else "None"
 
             prompt = f"Previous results: {context}\n\nNew task: {task}"
-            messages.append(HumanMessage(content=prompt))
 
             if self.llm is None:
                 raise ValueError("LLM not initialized")
-            response = self.llm.invoke(messages)
-            messages.append(response)
+            response = self.llm.invoke([HumanMessage(content=prompt)])
             results[current_step] = response.content
 
             return {
-                "messages": messages,
                 "current_step": current_step,
                 "results": results,
                 "context": context,
                 "step_data": step_data,
             }
 
-        def route_next_step(state: WorkflowState) -> Union[str, Any]:
+        def route_next_step(state: WorkflowState) -> WorkflowState:
             steps = list(state["step_data"].keys())
             current_step = state["current_step"]
             try:
                 current_index = steps.index(current_step)
                 if current_index + 1 < len(steps):
                     next_step = steps[current_index + 1]
-                    state["current_step"] = next_step
+                    return {
+                        "current_step": next_step,
+                        "results": state["results"],
+                        "context": state["context"],
+                        "step_data": state["step_data"],
+                    }
+                else:
+                    return state
+            except ValueError:
+                return state
+
+        graph = StateGraph(WorkflowState)
+        graph.add_node("process", process_step)
+        graph.add_node("route", route_next_step)
+        graph.set_entry_point("process")
+        graph.add_edge("process", "route")
+
+        def should_continue(state: WorkflowState) -> str:
+            steps = list(state["step_data"].keys())
+            current_step = state["current_step"]
+            try:
+                current_index = steps.index(current_step)
+                if current_index + 1 < len(steps):
                     return "process"
                 else:
                     return END
             except ValueError:
                 return END
 
-        graph = StateGraph(WorkflowState)
-        graph.add_node("process", process_step)
-        graph.set_entry_point("process")
-        graph.add_conditional_edges("process", route_next_step)
+        graph.add_conditional_edges("route", should_continue)
 
         self.graphs["sequential"] = graph.compile()
 
     def _create_parallel_graph(self) -> None:
         """Create a parallel pipeline graph."""
 
-        def make_task_node(i: int):
-            def run(state: WorkflowState) -> WorkflowState:
-                return self._execute_parallel_task(state, i)
+        def task1_node(state: WorkflowState) -> WorkflowState:
+            task = PARALLEL_TASKS[0]
+            if self.llm is None:
+                raise ValueError("LLM not initialized")
+            response = self.llm.invoke([HumanMessage(content=task)])
+            state["results"]["task_0"] = response.content
+            return state
 
-            return run
+        def task2_node(state: WorkflowState) -> WorkflowState:
+            task = PARALLEL_TASKS[1]
+            if self.llm is None:
+                raise ValueError("LLM not initialized")
+            response = self.llm.invoke([HumanMessage(content=task)])
+            state["results"]["task_1"] = response.content
+            return state
 
-        graph = StateGraph(WorkflowState)
+        def task3_node(state: WorkflowState) -> WorkflowState:
+            task = PARALLEL_TASKS[2]
+            if self.llm is None:
+                raise ValueError("LLM not initialized")
+            response = self.llm.invoke([HumanMessage(content=task)])
+            state["results"]["task_2"] = response.content
+            return state
 
-        for i in range(len(PARALLEL_TASKS)):
-            node_name = f"task{i+1}"
-            graph.add_node(node_name, make_task_node(i))
-            graph.set_entry_point(node_name)
-            graph.add_edge(node_name, "collect")
+        def task4_node(state: WorkflowState) -> WorkflowState:
+            task = PARALLEL_TASKS[3]
+            if self.llm is None:
+                raise ValueError("LLM not initialized")
+            response = self.llm.invoke([HumanMessage(content=task)])
+            state["results"]["task_3"] = response.content
+            return state
 
         def collect_results(state: WorkflowState) -> WorkflowState:
             return state
 
+        graph = StateGraph(WorkflowState)
+        graph.add_node("task1", task1_node)
+        graph.add_node("task2", task2_node)
+        graph.add_node("task3", task3_node)
+        graph.add_node("task4", task4_node)
         graph.add_node("collect", collect_results)
+
+        def start_parallel(state: WorkflowState) -> WorkflowState:
+            return state
+
+        graph.add_node("start", start_parallel)
+        graph.set_entry_point("start")
+
+        graph.add_edge("start", "task1")
+        graph.add_edge("start", "task2")
+        graph.add_edge("start", "task3")
+        graph.add_edge("start", "task4")
+
+        graph.add_edge("task1", "collect")
+        graph.add_edge("task2", "collect")
+        graph.add_edge("task3", "collect")
+        graph.add_edge("task4", "collect")
         graph.add_edge("collect", END)
 
         self.graphs["parallel"] = graph.compile()
@@ -176,28 +274,69 @@ class LangGraphBenchmark(BaseBenchmark):
     def _create_complex_graph(self) -> None:
         """Create a complex workflow graph with dependencies."""
 
-        def make_step_node(step_name: str):
-            def run(state: WorkflowState) -> WorkflowState:
-                return self._execute_workflow_step(state, step_name)
+        def content_analysis_node(state: WorkflowState) -> WorkflowState:
+            step = COMPLEX_WORKFLOW_STEPS[0]
+            if self.llm is None:
+                raise ValueError("LLM not initialized")
+            response = self.llm.invoke([HumanMessage(content=step["prompt"])])
+            state["results"]["content_analysis"] = response.content
+            return state
 
-            return run
+        def solution_generation_node(state: WorkflowState) -> WorkflowState:
+            step = COMPLEX_WORKFLOW_STEPS[1]
+            context = state["results"].get("content_analysis", "")
+            prompt = f"Context: {context}\n\nTask: {step['prompt']}"
+            if self.llm is None:
+                raise ValueError("LLM not initialized")
+            response = self.llm.invoke([HumanMessage(content=prompt)])
+            state["results"]["solution_generation"] = response.content
+            return state
+
+        def cost_analysis_node(state: WorkflowState) -> WorkflowState:
+            step = COMPLEX_WORKFLOW_STEPS[2]
+            context = state["results"].get("solution_generation", "")
+            prompt = f"Context: {context}\n\nTask: {step['prompt']}"
+            if self.llm is None:
+                raise ValueError("LLM not initialized")
+            response = self.llm.invoke([HumanMessage(content=prompt)])
+            state["results"]["cost_analysis"] = response.content
+            return state
+
+        def risk_assessment_node(state: WorkflowState) -> WorkflowState:
+            step = COMPLEX_WORKFLOW_STEPS[3]
+            context = state["results"].get("solution_generation", "")
+            prompt = f"Context: {context}\n\nTask: {step['prompt']}"
+            if self.llm is None:
+                raise ValueError("LLM not initialized")
+            response = self.llm.invoke([HumanMessage(content=prompt)])
+            state["results"]["risk_assessment"] = response.content
+            return state
+
+        def recommendation_node(state: WorkflowState) -> WorkflowState:
+            step = COMPLEX_WORKFLOW_STEPS[4]
+            cost_context = state["results"].get("cost_analysis", "")
+            risk_context = state["results"].get("risk_assessment", "")
+            prompt = f"Cost Analysis: {cost_context}\n\nRisk Assessment: {risk_context}\n\nTask: {step['prompt']}"
+            if self.llm is None:
+                raise ValueError("LLM not initialized")
+            response = self.llm.invoke([HumanMessage(content=prompt)])
+            state["results"]["recommendation"] = response.content
+            return state
 
         graph = StateGraph(WorkflowState)
+        graph.add_node("content_analysis", content_analysis_node)
+        graph.add_node("solution_generation", solution_generation_node)
+        graph.add_node("cost_analysis", cost_analysis_node)
+        graph.add_node("risk_assessment", risk_assessment_node)
+        graph.add_node("recommendation", recommendation_node)
 
-        for step in COMPLEX_WORKFLOW_STEPS:
-            graph.add_node(step["task"], make_step_node(step["task"]))
-
-        # Add edges based on dependency structure
-        for step in COMPLEX_WORKFLOW_STEPS:
-            for dep in step["depends_on"]:
-                graph.add_edge(dep, step["task"])
-
-        last_step = COMPLEX_WORKFLOW_STEPS[-1]["task"]
-        graph.add_edge(last_step, END)
-
-        # Set first task as entry point
-        first_step = COMPLEX_WORKFLOW_STEPS[0]["task"]
-        graph.set_entry_point(first_step)
+        graph.set_entry_point("content_analysis")
+        graph.add_edge("content_analysis", "solution_generation")
+        graph.add_edge("solution_generation", "cost_analysis")
+        graph.add_edge("solution_generation", "risk_assessment")
+        graph.add_edge("cost_analysis", "recommendation")
+        graph.add_edge("risk_assessment", "recommendation")
+        graph.add_edge("recommendation", END)
 
         self.graphs["complex"] = graph.compile()
 
@@ -265,7 +404,6 @@ class LangGraphBenchmark(BaseBenchmark):
             graph = self.graphs["sequential"]
             step_data = {f"step_{i}": task for i, task in enumerate(SEQUENTIAL_TASKS)}
             state: WorkflowState = {
-                "messages": [],
                 "current_step": "step_0",
                 "results": {},
                 "context": "",
@@ -290,7 +428,6 @@ class LangGraphBenchmark(BaseBenchmark):
         try:
             graph = self.graphs["parallel"]
             state: WorkflowState = {
-                "messages": [],
                 "current_step": "",
                 "results": {},
                 "context": "",
@@ -316,7 +453,6 @@ class LangGraphBenchmark(BaseBenchmark):
         try:
             graph = self.graphs["complex"]
             state: WorkflowState = {
-                "messages": [],
                 "current_step": "",
                 "results": {},
                 "context": "",

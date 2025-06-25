@@ -7,6 +7,7 @@ from typing import Any, Dict, List, Optional
 from pydantic import BaseModel
 from pydantic_ai import Agent
 from pydantic_ai.models.openai import OpenAIModel
+from pydantic_ai.settings import ModelSettings
 
 from .common import (
     COMPLEX_WORKFLOW_STEPS,
@@ -18,9 +19,10 @@ from .common import (
     BaseBenchmark,
     BenchmarkMetrics,
     BenchmarkScenario,
+    LLMConfig,
+    LLMProvider,
     calculate_throughput,
     count_tokens_estimate,
-    get_standard_llm_config,
 )
 
 
@@ -52,57 +54,91 @@ class PydanticAIBenchmark(BaseBenchmark):
     def __init__(self, config: Dict[str, Any]):
         """Initialize PydanticAI benchmark with configuration."""
         super().__init__(config)
-        self.openai_model: Optional[OpenAIModel] = None
+        self.model: Optional[Any] = None
         self.agents: Dict[str, Agent] = {}
+
+    def _get_llm_params(self) -> tuple[int, float]:
+        """Get max_tokens and temperature from configuration."""
+        llm_config_obj: LLMConfig | None = self.config.get("llm_config")
+        if not llm_config_obj:
+            raise ValueError("LLMConfig not found in configuration")
+        return llm_config_obj.max_tokens, llm_config_obj.temperature
 
     async def setup(self) -> None:
         """Set up Pydantic AI for benchmarking."""
-        # Get standardized configuration
-        llm_config = get_standard_llm_config(self.config)
-        api_key = os.getenv("OPENAI_API_KEY") or llm_config["api_key"]
-        if not api_key:
-            raise ValueError("OpenAI API key not found in environment or config")
+        llm_config_obj: LLMConfig | None = self.config.get("llm_config")
+        if not llm_config_obj:
+            raise ValueError("LLMConfig not found in configuration")
 
-        # Initialize Pydantic AI model
-        self.openai_model = OpenAIModel(
-            model_name=llm_config["model"],
-        )
+        if llm_config_obj.provider == LLMProvider.OPENAI:
+            api_key = llm_config_obj.api_key or os.getenv("OPENAI_API_KEY")
+            if not api_key:
+                raise ValueError("OpenAI API key not found in environment or config")
+
+            self.model = OpenAIModel(model_name=llm_config_obj.model)
+
+        elif llm_config_obj.provider == LLMProvider.ANTHROPIC:
+            # PydanticAI supports Anthropic models
+            api_key = llm_config_obj.api_key or os.getenv("ANTHROPIC_API_KEY")
+            if not api_key:
+                raise ValueError("Anthropic API key not found in environment or config")
+
+            from pydantic_ai.models.anthropic import AnthropicModel
+
+            self.model = AnthropicModel(model_name=llm_config_obj.model)
+
+        elif llm_config_obj.provider == LLMProvider.OLLAMA:
+            # PydanticAI does not support Ollama
+            raise ValueError("PydanticAI does not support OLLAMA provider. Please use OpenAI or Anthropic.")
+
+        else:
+            raise ValueError(f"Unsupported provider for PydanticAI: {llm_config_obj.provider}")
 
         # Pre-create common agents
         self._setup_agents()
 
     def _setup_agents(self) -> None:
         """Set up common Pydantic AI agents."""
-        if self.openai_model is None:
-            raise ValueError("OpenAIModel not initialized")
+        if self.model is None:
+            raise ValueError("Model not initialized")
+
+        max_tokens, temperature = self._get_llm_params()
+        model_settings = ModelSettings(
+            temperature=temperature,
+            max_tokens=max_tokens,
+        )
 
         self.agents["simple"] = Agent(
-            model=self.openai_model,
-            result_type=SimpleResponse,
+            model=self.model,
+            output_type=SimpleResponse,
             system_prompt="You are a helpful AI assistant. Respond with analysis and insights.",
+            model_settings=model_settings,
         )
 
         self.agents["sequential"] = Agent(
-            model=self.openai_model,
-            result_type=SequentialResponse,
+            model=self.model,
+            output_type=SequentialResponse,
             system_prompt="You are processing tasks in sequence. Use previous results to inform your response.",
+            model_settings=model_settings,
         )
 
         self.agents["complex"] = Agent(
-            model=self.openai_model,
-            result_type=ComplexResponse,
+            model=self.model,
+            output_type=ComplexResponse,
             system_prompt="You are part of a complex workflow. Consider dependencies and context.",
+            model_settings=model_settings,
         )
 
         self.agents["general"] = Agent(
-            model=self.openai_model,
-            result_type=str,
+            model=self.model,
+            output_type=str,
             system_prompt="You are a helpful AI assistant.",
+            model_settings=model_settings,
         )
 
     async def teardown(self) -> None:
         """Cleanup Pydantic AI resources."""
-        self.openai_model = None
+        self.model = None
         self.agents = {}
 
     async def run_simple_task(self) -> BenchmarkMetrics:
@@ -140,7 +176,8 @@ class PydanticAIBenchmark(BaseBenchmark):
 
             result = await agent.run(prompt)
             previous_result = result.output.step_result
-            total_tokens += count_tokens_estimate(prompt + previous_result)
+            # Count tokens based on original task only for fair comparison
+            total_tokens += count_tokens_estimate(task + previous_result)
 
             self.log_output(
                 scenario_name=BenchmarkScenario.SEQUENTIAL_PIPELINE.value,
@@ -199,7 +236,8 @@ class PydanticAIBenchmark(BaseBenchmark):
                 output=result.output.result,
             )
 
-            total_tokens += count_tokens_estimate(prompt + result.output.result)
+            # Count tokens based on original step prompt only for fair comparison
+            total_tokens += count_tokens_estimate(step["prompt"] + result.output.result)
 
         metrics = self.monitor.stop_monitoring()
         metrics.token_count = total_tokens

@@ -8,15 +8,49 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 import psutil
 
 # Configure logging
 # Standard LLM Configuration Constants
-DEFAULT_TEMPERATURE = 0.7
-DEFAULT_MAX_TOKENS = 1000
-DEFAULT_MODEL = "gpt-3.5-turbo"
+DEFAULT_TEMPERATURE = 0.1
+DEFAULT_MAX_TOKENS = 2000
+DEFAULT_MODEL = "gpt-4o-mini"
+
+
+class LLMProvider(Enum):
+    """Supported LLM providers for benchmarking."""
+
+    OPENAI = "openai"
+    ANTHROPIC = "anthropic"
+    OLLAMA = "ollama"
+    HUGGINGFACE = "huggingface"
+
+
+@dataclass
+class LLMConfig:
+    """Configuration for LLM providers."""
+
+    provider: LLMProvider
+    model: str
+    temperature: float = DEFAULT_TEMPERATURE
+    max_tokens: int = DEFAULT_MAX_TOKENS
+    api_key: Optional[str] = None
+    base_url: Optional[str] = None  # For custom endpoints like Ollama
+    api_version: Optional[str] = None  # For Azure OpenAI
+
+    # Provider-specific configurations
+    extra_params: Dict[str, Any] = field(default_factory=dict)
+
+
+# Provider-specific model presets
+PROVIDER_MODELS = {
+    LLMProvider.OPENAI: ["gpt-4o", "gpt-4o-mini", "gpt-4-turbo", "gpt-3.5-turbo", "o1-preview", "o1-mini"],
+    LLMProvider.ANTHROPIC: ["claude-3-5-sonnet-20241022", "claude-3-5-haiku-20241022", "claude-3-opus-20240229", "claude-3-sonnet-20240229", "claude-3-haiku-20240307"],
+    LLMProvider.OLLAMA: ["llama3.2", "llama3.1", "codellama", "mistral", "phi3", "qwen2.5"],
+    LLMProvider.HUGGINGFACE: ["microsoft/DialoGPT-medium", "microsoft/DialoGPT-large", "facebook/blenderbot-400M-distill", "google/flan-t5-large"],
+}
 
 
 class BenchmarkLogger:
@@ -154,7 +188,7 @@ class BaseBenchmark(ABC):
         """Initialize the benchmark with configuration."""
         self.config = config
         self.api_key = config.get("api_key") or config.get("openai_api_key")
-        self.model = config.get("model", "gpt-3.5-turbo")
+        self.model = config.get("model", "gpt-4o-mini")
         self.monitor = PerformanceMonitor()
 
         # Initialize logger
@@ -382,3 +416,22 @@ def get_standard_llm_config(config: Dict[str, Any]) -> Dict[str, Any]:
         "max_tokens": config.get("max_tokens", DEFAULT_MAX_TOKENS),
         "api_key": config.get("api_key") or config.get("openai_api_key"),
     }
+
+
+def create_llm_config_from_args(provider: str, model: str, temperature: float, max_tokens: int, api_key: Optional[str] = None, base_url: Optional[str] = None, **kwargs: Any) -> LLMConfig:
+    """Create LLMConfig from command line arguments."""
+    try:
+        provider_enum = LLMProvider(provider.lower())
+    except ValueError:
+        raise ValueError(f"Unsupported provider: {provider}. Supported: {[p.value for p in LLMProvider]}")
+
+    return LLMConfig(provider=provider_enum, model=model, temperature=temperature, max_tokens=max_tokens, api_key=api_key, base_url=base_url, extra_params=kwargs)
+
+
+def get_provider_models(provider: str) -> List[str]:
+    """Get available models for a provider."""
+    try:
+        provider_enum = LLMProvider(provider.lower())
+        return PROVIDER_MODELS.get(provider_enum, [])
+    except ValueError:
+        return []

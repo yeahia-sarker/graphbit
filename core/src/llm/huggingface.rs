@@ -2,9 +2,7 @@
 
 use crate::errors::{GraphBitError, GraphBitResult};
 use crate::llm::providers::LlmProviderTrait;
-use crate::llm::{
-    EnhancedLlmProviderTrait, FinishReason, LlmMessage, LlmRequest, LlmResponse, LlmRole, LlmUsage,
-};
+use crate::llm::{FinishReason, LlmMessage, LlmRequest, LlmResponse, LlmRole, LlmUsage};
 use async_trait::async_trait;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
@@ -207,29 +205,6 @@ impl LlmProviderTrait for HuggingFaceProvider {
         // HuggingFace inference API pricing varies by model
         // This would need to be updated based on actual pricing
         Some((0.0001, 0.0001)) // Placeholder values
-    }
-}
-
-#[async_trait]
-impl EnhancedLlmProviderTrait for HuggingFaceProvider {
-    fn clone_provider(&self) -> Box<dyn LlmProviderTrait> {
-        Box::new(Self {
-            client: self.client.clone(),
-            api_key: self.api_key.clone(),
-            model: self.model.clone(),
-            base_url: self.base_url.clone(),
-        })
-    }
-
-    async fn get_provider_stats(&self) -> GraphBitResult<serde_json::Value> {
-        Ok(serde_json::json!({
-            "provider_type": "huggingface",
-            "model": self.model,
-            "supports_streaming": false,
-            "supports_function_calling": false,
-            "total_requests": 0,
-            "avg_response_time_ms": 0.0
-        }))
     }
 }
 
