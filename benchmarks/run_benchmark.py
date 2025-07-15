@@ -51,7 +51,7 @@ def _default_concurrency() -> int:
 
 
 # Central global variable for number of runs
-NUM_RUNS = 2
+NUM_RUNS = 10
 DEFAULT_CONCURRENCY = _default_concurrency()
 
 try:
