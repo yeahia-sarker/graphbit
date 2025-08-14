@@ -1,4 +1,4 @@
-# Azure AI Integration with Graphbit
+# Azure Integration with Graphbit
 
 ## Overview
 
