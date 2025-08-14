@@ -28,8 +28,7 @@ All example scripts in this directory use the **GraphBit Python API** to build a
 
 ### 1. **Initialize GraphBit**
 ```python
-import graphbit
-graphbit.init()
+from graphbit import LlmConfig, Executor, Workflow, Node
 ```
 This sets up the GraphBit runtime and logging.
 
@@ -38,15 +37,15 @@ This sets up the GraphBit runtime and logging.
 ### 2. **Configure Your LLM Provider**
 - **openai (cloud):**
   ```python
-  llm_config = graphbit.LlmConfig.openai(model=gpt-3.5-turbo, api_key=api_key)
+  llm_config = LlmConfig.openai(model=gpt-3.5-turbo, api_key=api_key)
   ```
 - **Ollama (local):**
   ```python
-  llm_config = graphbit.LlmConfig.ollama("llama3.2")
+  llm_config = LlmConfig.ollama("llama3.2")
   ```
 - **Perplexity (cloud):**
   ```python
-  llm_config = graphbit.LlmConfig.perplexity(api_key, "sonar")
+  llm_config = LlmConfig.perplexity(api_key, "sonar")
   ```
 
 ---
@@ -54,13 +53,13 @@ This sets up the GraphBit runtime and logging.
 ### 3. **Create an Executor**
 Choose the executor type based on your use case:
 ```python
-executor = graphbit.Executor.new_low_latency(llm_config)
+executor = Executor.new_low_latency(llm_config)
 
 # or for high-throughput pipelines:
-executor = graphbit.Executor.new_high_throughput(llm_config, timeout_seconds=60)
+executor = Executor.new_high_throughput(llm_config, timeout_seconds=60)
 
 # or for memory-intensive tasks:
-executor = graphbit.Executor.new_memory_optimized(llm_config, timeout_seconds=300)
+executor = Executor.new_memory_optimized(llm_config, timeout_seconds=300)
 
 # Configure additional settings for memory-intensive tasks if needed
 executor.configure(timeout_seconds=300, max_retries=3, enable_metrics=True, debug=False)
@@ -70,15 +69,15 @@ executor.configure(timeout_seconds=300, max_retries=3, enable_metrics=True, debu
 ### 4. **Build a Workflow**
 Create a workflow and add agent nodes:
 ```python
-workflow = graphbit.Workflow("My Example Workflow")
+workflow = Workflow("My Example Workflow")
 agent_id1 = str(uuid.uuid4())
-node1 = graphbit.Node.agent(
+node1 = Node.agent(
     name="Summarizer",
     prompt="Summarize: {input}",
     agent_id=agent_id1
 )
 agent_id2 = str(uuid.uuid4())
-node2 = graphbit.Node.agent(
+node2 = Node.agent(
     name="Task Executor",
     prompt="Summarize this text: {input}",
     agent_id=agent_id2
@@ -105,21 +104,20 @@ else:
 
 ### 6. **Example: Minimal End-to-End Script**
 ```python
-import graphbit
+from graphbit import LlmConfig, Executor, Workflow, Node
 import uuid
 
-graphbit.init()
-llm_config = graphbit.LlmConfig.ollama("llama3.2")
-executor = graphbit.Executor.new_low_latency(llm_config)
-workflow = graphbit.Workflow("Simple Task")
+llm_config = LlmConfig.ollama("llama3.2")
+executor = Executor.new_low_latency(llm_config)
+workflow = Workflow("Simple Task")
 agent_id1 = str(uuid.uuid4())
-node1 = graphbit.Node.agent(
+node1 = Node.agent(
     name="Summarizer",
     prompt="Summarize: {input}",
     agent_id=agent_id1
 )
 agent_id2 = str(uuid.uuid4())
-node2 = graphbit.Node.agent(
+node2 = Node.agent(
     name="Task Executor",
     prompt="Summarize this text: {input}",
     agent_id=agent_id2

@@ -60,11 +60,10 @@ conn.commit()
 Use Graphbit to generate embeddings for your texts:
 
 ```python
-import graphbit
+from graphbit import EmbeddingClient, EmbeddingConfig
 
-graphbit.init()
-embedding_client = graphbit.EmbeddingClient(
-    graphbit.EmbeddingConfig.openai(
+embedding_client = EmbeddingClient(
+    EmbeddingConfig.openai(
         model="text-embedding-3-small",
         api_key=os.getenv("OPENAI_API_KEY"),
     )
@@ -160,7 +159,7 @@ import array
 import json
 import numpy as np
 import mariadb
-import graphbit
+from graphbit import EmbeddingClient, EmbeddingConfig
 
 # Step 1: Connect to MariaDB
 conn = mariadb.connect(
@@ -184,9 +183,8 @@ CREATE TABLE IF NOT EXISTS graphbit_vector (
 conn.commit()
 
 # Step 3: Generate Embeddings using Graphbit
-graphbit.init()
-embedding_client = graphbit.EmbeddingClient(
-    graphbit.EmbeddingConfig.openai(
+embedding_client = EmbeddingClient(
+    EmbeddingConfig.openai(
         model="text-embedding-3-small",
         api_key=os.getenv("OPENAI_API_KEY"),
     )
