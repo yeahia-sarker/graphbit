@@ -1,103 +1,83 @@
-"""
-This script demonstrates the integration of Azure services with Graphbit.
-
-Key operations:
-
-- Text generation with Azure OpenAI.
-- Embedding generation and storage in Azure AI Search.
-- Vector similarity search using Graphbit.
-"""
+"""Azure integration with Graphbit."""
 
 import ast
 import json
 import os
 
-import openai
-from azure.core.credentials import AzureKeyCredential
-from azure.search.documents import SearchClient
+import psycopg2
 from dotenv import load_dotenv
+from openai import AzureOpenAI
 
-from graphbit import EmbeddingClient as gb_etc
-from graphbit import EmbeddingConfig as gb_ecg
+from graphbit import EmbeddingClient, EmbeddingConfig
 
 load_dotenv()
 
-openai.api_type = "azure"
-openai.api_key = os.getenv("AZURE_OPENAI_API_KEY")
-openai.api_base = os.getenv("AZURE_OPENAI_ENDPOINT")
-openai.api_version = os.getenv("AZURE_OPENAI_API_VERSION", "2024-03-01-preview")
 
+# Connect to PostgreSQL
+conn = psycopg2.connect(dbname="vector_db", user="postgres", password="postgres", host="localhost", port=5432)
+cur = conn.cursor()
 
-# Simple text completion with Azure OpenAI
+# Load configuration from environment
+api_key = os.getenv("AZURE_OPENAI_API_KEY")
+endpoint = os.getenv("AZURE_OPENAI_ENDPOINT")
+api_version = os.getenv("AZURE_OPENAI_API_VERSION")
+deployment_chat = os.getenv("AZURE_OPENAI_DEPLOYMENT_CHAT")
+deployment_embeddings = os.getenv("AZURE_OPENAI_DEPLOYMENT_EMBEDDINGS")
+
+# Create Azure OpenAI client
+client = AzureOpenAI(
+    api_key=api_key,
+    api_version=api_version,
+    azure_endpoint=endpoint,
+)
+
+# -------------------------------
+# Simple text completion (Chat)
+# -------------------------------
 prompt = "Hello, how are you?"
-response = openai.ChatCompletion.create(
-    engine=os.getenv("AZURE_OPENAI_DEPLOYMENT"),
+chat_response = client.chat.completions.create(
+    model=deployment_chat,  # <-- deployment name (a.k.a. "model" for Azure clients)
     messages=[{"role": "user", "content": prompt}],
     max_tokens=128,
 )
-print(response["choices"][0]["message"]["content"])
+print("Chat completion:\n", chat_response.choices[0].message.content)
 
-
-# Generate embeddings using Azure OpenAI
-text = "This is a sample document for vector search."
-response = openai.Embedding.create(
-    engine=os.getenv("AZURE_OPENAI_DEPLOYMENT"),
-    input=text,
-)
-print(response["data"][0]["embedding"])
-
-# Azure AI Search vectorstore Integration
-# Configure environment variables for Azure AI Search
-
-AZURE_SEARCH_ENDPOINT = os.getenv("AZURE_SEARCH_ENDPOINT")
-AZURE_SEARCH_KEY = os.getenv("AZURE_SEARCH_KEY")
-AZURE_SEARCH_INDEX = os.getenv("AZURE_SEARCH_INDEX")
-if not all([AZURE_SEARCH_ENDPOINT, AZURE_SEARCH_KEY, AZURE_SEARCH_INDEX]):
-    raise ValueError("Missing required environment variables for Azure Search.")
-
-search_client = SearchClient(endpoint=AZURE_SEARCH_ENDPOINT, index_name=AZURE_SEARCH_INDEX, credential=AzureKeyCredential(AZURE_SEARCH_KEY))
-
-
-# Generate and Store single embedding
-
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-embedding_config = gb_ecg.openai(OPENAI_API_KEY, "text-embedding-3-small")
-embedding_client = gb_etc(embedding_config)
-
-# Insert a single embedding
-doc_text = "This is a sample document for vector search."
-embedding = embedding_client.embed(doc_text)
-
-document = {"id": "item_1", "text": doc_text, "embedding": embedding, "metadata": json.dumps({"category": "test"})}
-search_client.upload_documents(documents=[document])
-print("Inserted embedding for item_1.")
-
-# Batch embedding insert
-batch_texts = [
-    "Graph databases are great for relationships.",
-    "Vector search enables semantic retrieval.",
-    "OpenAI provides powerful embedding models.",
+# -------------------------------
+# Generate embeddings
+# -------------------------------
+texts = [
+    "GraphBit is a framework for LLM workflows and agent orchestration.",
+    "ChromaDB is a fast, open-source embedding database for AI applications.",
+    "OpenAI offers tools for LLMs and embeddings.",
 ]
-batch_embeddings = embedding_client.embed_many(batch_texts)
-batch_docs = []
-for idx, (text, emb) in enumerate(zip(batch_texts, batch_embeddings)):
-    batch_docs.append({"id": f"batch_{idx}", "text": text, "embedding": emb, "metadata": json.dumps({"text": text})})
-search_client.upload_documents(documents=batch_docs)
-print(f"Inserted {len(batch_texts)} documents with embeddings.")
 
+embed_response = client.embeddings.create(
+    model=deployment_embeddings,  # <-- deployment name for your embedding model
+    input=texts,
+)
 
-# Vector search using Graphbit
+embeddings = [d.embedding for d in embed_response.data]
+print("\nEmbedding vector (truncated):\n", embed_response.data[0].embedding[:5])  # preview only
 
-query_text = "Find documents related to vector search."
-query_embedding = embedding_client.embed(query_text)
+# Insert embeddings into PGVector table
+for idx, (text, emb) in enumerate(zip(texts, embeddings)):
+    cur.execute(
+        """
+        INSERT INTO vector_data (item_id, embedding, metadata)
+        VALUES (%s, %s, %s)
+        """,
+        (f"batch_{idx}", emb, json.dumps({"text": text})),
+    )
+conn.commit()
 
-# Get all documents (with embeddings) from Azure Search
-results = search_client.search(search_text=None, vector=query_embedding, top_k=10, vector_fields="embedding")  # Limit the results to top 10
+query = "What is ChromaDB?"
+query_embedding = client.embeddings.create(model=deployment_embeddings, input=query).data[0].embedding
 
-# Retrieve all rows from the search query results
-all_rows = [(result["id"], result["embedding"], result["metadata"]) for result in results]
+embedding_config = EmbeddingConfig.openai(os.getenv("OPENAI_API_KEY"), "text-embedding-3-small")
+embedding_client = EmbeddingClient(embedding_config)
 
-# Apply custom vector similarity search using Graphbit logic
+cur.execute("SELECT item_id, embedding, metadata FROM vector_data;")
+all_rows = cur.fetchall()
 best_score = -1
 best_item = None
 for item_id, embedding_vec, metadata in all_rows:
@@ -108,10 +88,8 @@ for item_id, embedding_vec, metadata in all_rows:
     if score > best_score:
         best_score = score
         best_item = (item_id, metadata)
-
 if best_item is not None:
-    print(f"[Vector Search] Most similar document: {best_item[0]} with score {best_score:.4f}")
+    print(f"Most similar document: {best_item[0]} with score {best_score:.4f}")
 else:
-    print("[Vector Search] No documents found in vector table.")
-
-print("Done.")
+    print("No documents found in vector table.")
+conn.close()
