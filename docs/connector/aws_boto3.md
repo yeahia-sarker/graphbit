@@ -91,6 +91,7 @@ with open('downloaded_file.txt', 'r') as f:
     print("\nContent of file from S3 after update:")
     print(f.read())
 ```
+
 ---
 
 ## Step 3: Embedding with Graphbit and Storing in DynamoDB
@@ -159,6 +160,7 @@ with table.batch_writer() as batch:
         batch.put_item(Item=item)
 print(f"Inserted {len(batch_items)} batch embeddings.")
 ```
+
 ---
 
 ## Step 5: Vector Search using Graphbit

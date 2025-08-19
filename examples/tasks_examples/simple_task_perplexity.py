@@ -3,7 +3,7 @@
 import os
 import uuid
 
-import graphbit
+from graphbit import Executor, LlmConfig, Node, Workflow
 
 # Demonstration task that benefits from real-time web search
 SEARCH_TASK_PROMPT = (
@@ -67,20 +67,18 @@ def run_simple_task_perplexity():
     print(f"[LOG]  Using Perplexity model: {model}")
     print("[LOG]  This model has real-time web search capabilities for current information")
 
-    graphbit.init()
-
     # Configure Perplexity with search-enabled model
-    llm_config = graphbit.LlmConfig.perplexity(api_key, model)
+    llm_config = LlmConfig.perplexity(api_key, model)
 
     # Create executor optimized for cloud API performance
-    executor = graphbit.Executor.new_low_latency(llm_config)
+    executor = Executor(llm_config, lightweight_mode=True)
 
     agent_id = str(uuid.uuid4())
 
-    workflow = graphbit.Workflow("Real-time Search Task Workflow")
+    workflow = Workflow("Real-time Search Task Workflow")
 
     # Create agent node with search task
-    node = graphbit.Node.agent(name="Search Research Assistant", prompt=SEARCH_TASK_PROMPT, agent_id=agent_id)
+    node = Node.agent(name="Search Research Assistant", prompt=SEARCH_TASK_PROMPT, agent_id=agent_id)
 
     workflow.add_node(node)
     workflow.validate()

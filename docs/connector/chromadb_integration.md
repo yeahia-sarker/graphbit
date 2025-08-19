@@ -46,11 +46,10 @@ else:
 Use Graphbit to generate embeddings for your texts:
 
 ```python
-import graphbit
+from graphbit import EmbeddingClient, EmbeddingConfig
 
-graphbit.init()
-embedding_client = graphbit.EmbeddingClient(
-    graphbit.EmbeddingConfig.openai(
+embedding_client = EmbeddingClient(
+    EmbeddingConfig.openai(
         model="text-embedding-3-small",
         api_key=os.getenv("OPENAI_API_KEY"),
     )
@@ -111,11 +110,10 @@ for doc_id, text, score in zip(ids, docs, scores):
 ```python
 import os
 from chromadb import Client
-import graphbit
+from graphbit import EmbeddingClient, EmbeddingConfig
 
-graphbit.init()
-embedding_client = graphbit.EmbeddingClient(
-    graphbit.EmbeddingConfig.openai(
+embedding_client = EmbeddingClient(
+    EmbeddingConfig.openai(
         model="text-embedding-3-small",
         api_key=os.getenv("OPENAI_API_KEY"),
     )

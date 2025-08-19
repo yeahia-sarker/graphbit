@@ -113,6 +113,7 @@ docs = [
 vector_collection.insert_many(docs)
 print(f"Inserted {len(batch_texts)} documents into AstraDB vector collection.")
 ```
+
 ---
 
 ## Step 3: Search Vectors
@@ -140,4 +141,5 @@ if best_doc:
 else:
     print("No documents found in vector collection.")
 ```
+
 ---
