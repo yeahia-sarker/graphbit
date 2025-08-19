@@ -53,13 +53,13 @@ This sets up the GraphBit runtime and logging.
 ### 3. **Create an Executor**
 Choose the executor type based on your use case:
 ```python
-executor = Executor.new_low_latency(llm_config)
+executor = Executor(llm_config, lightweight_mode=True)
 
 # or for high-throughput pipelines:
-executor = Executor.new_high_throughput(llm_config, timeout_seconds=60)
+executor = Executor(llm_config, timeout_seconds=60)
 
 # or for memory-intensive tasks:
-executor = Executor.new_memory_optimized(llm_config, timeout_seconds=300)
+executor = Executor(llm_config, timeout_seconds=300)
 
 # Configure additional settings for memory-intensive tasks if needed
 executor.configure(timeout_seconds=300, max_retries=3, enable_metrics=True, debug=False)

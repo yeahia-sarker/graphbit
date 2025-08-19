@@ -71,7 +71,7 @@ def run_simple_task_perplexity():
     llm_config = LlmConfig.perplexity(api_key, model)
 
     # Create executor optimized for cloud API performance
-    executor = Executor(llm_config, lightweight=True)
+    executor = Executor(llm_config, lightweight_mode=True)
 
     agent_id = str(uuid.uuid4())
 
