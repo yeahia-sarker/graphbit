@@ -80,18 +80,20 @@ embed_response = client.embeddings.create(
 embeddings = [d.embedding for d in embed_response.data]
 print("\nEmbedding vector (truncated):\n", embed_response.data[0].embedding[:5])  # preview only
 
-# Insert embeddings into PGVector table
+# Insert embeddings into PGVector(Or any other vector database of your choice) 
 for idx, (text, emb) in enumerate(zip(texts, embeddings)):
-    cur.execute(
+    connection_cursor.execute(
         """
         INSERT INTO vector_data (item_id, embedding, metadata)
         VALUES (%s, %s, %s)
         """,
         (f"batch_{idx}", emb, json.dumps({"text": text}))
     )
-conn.commit()
+connection.commit()
 print(f"Inserted {len(texts)} documents with embeddings.")
 ```
+
+> See [PGVector Integration](../connector/pgvector.md) for more details.
 
 ---
 
