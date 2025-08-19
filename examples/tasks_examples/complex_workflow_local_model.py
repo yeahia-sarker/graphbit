@@ -115,7 +115,7 @@ def run_complex_workflow_mistral():
     llm_config = LlmConfig.ollama(model)
 
     # Create memory-optimized executor with timeout
-    executor = Executor.new_memory_optimized(llm_config, timeout_seconds=300)
+    executor = Executor(llm_config, timeout_seconds=300)
 
     agent_id = str(uuid.uuid4())
 

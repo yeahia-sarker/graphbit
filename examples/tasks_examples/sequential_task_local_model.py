@@ -53,7 +53,7 @@ def run_sequential_pipeline_mistral():
     llm_config = LlmConfig.ollama(model)
 
     # Create executor with high throughput mode and configure timeout
-    executor = Executor.new_high_throughput(llm_config, timeout_seconds=60)
+    executor = Executor(llm_config, timeout_seconds=60)
     # Configure additional settings
     executor.configure(timeout_seconds=60, max_retries=2, enable_metrics=True, debug=True)
 

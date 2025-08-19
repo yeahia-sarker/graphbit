@@ -56,7 +56,7 @@ def run_simple_task_local():
     print(f"[LOG] Using Ollama model: {model}")
     llm_config = LlmConfig.ollama(model)
 
-    executor = Executor.new_low_latency(llm_config)
+    executor = Executor(llm_config, lightweight=True)
 
     agent_id = str(uuid.uuid4())
 

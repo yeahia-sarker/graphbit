@@ -31,7 +31,6 @@ embedding_client = EmbeddingClient(
 ```
 
 ---
----
 
 ## Step 2: Generate Embeddings
 

@@ -81,7 +81,7 @@ def run_memory_intensive_llama():
     llm_config = LlmConfig.ollama(model)
 
     # Create memory-optimized executor with extended timeout for large prompts
-    executor = Executor.new_memory_optimized(llm_config, timeout_seconds=300)
+    executor = Executor(llm_config, timeout_seconds=300)
 
     # Configure additional settings for memory-intensive tasks
     executor.configure(timeout_seconds=300, max_retries=3, enable_metrics=True, debug=False)
