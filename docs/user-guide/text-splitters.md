@@ -17,13 +17,12 @@ Text splitters help you:
 Splits text based on character count, ideal for simple use cases where exact chunk sizes are needed.
 
 ```python
-import graphbit
+from graphbit import CharacterSplitter
 
 # Initialize GraphBit
-graphbit.init()
 
 # Create a character splitter
-splitter = graphbit.CharacterSplitter(
+splitter = CharacterSplitter(
     chunk_size=1000,      # Maximum characters per chunk
     chunk_overlap=200     # Overlap between chunks
 )
@@ -43,15 +42,17 @@ for chunk in chunks:
 Splits text based on token count, useful when working with language models that have token limits.
 
 ```python
+from graphbit import TokenSplitter
+
 # Create a token splitter
-splitter = graphbit.TokenSplitter(
+splitter = TokenSplitter(
     chunk_size=100,       # Maximum tokens per chunk
     chunk_overlap=20,     # Token overlap
     token_pattern=None    # Optional custom regex pattern
 )
 
 # Custom token pattern example
-custom_splitter = graphbit.TokenSplitter(
+custom_splitter = TokenSplitter(
     chunk_size=50,
     chunk_overlap=10,
     token_pattern=r'\b\w+\b'  # Split only on words
@@ -63,17 +64,19 @@ custom_splitter = graphbit.TokenSplitter(
 Maintains sentence boundaries, perfect for preserving semantic units.
 
 ```python
+from graphbit import SentenceSplitter
+
 # Create a sentence splitter
-splitter = graphbit.SentenceSplitter(
+splitter = SentenceSplitter(
     chunk_size=500,       # Target size in characters
     chunk_overlap=1       # Number of sentences to overlap
 )
 
 # Custom sentence endings for multilingual text
-multilingual_splitter = graphbit.SentenceSplitter(
+multilingual_splitter = SentenceSplitter(
     chunk_size=500,
     chunk_overlap=1,
-    sentence_endings=[r"\.", r"!", r"\?", r"。", r"！", r"？"]
+    sentence_endings=[r"\\.", r"!", r"\\?", r"。", r"！", r"？"]
 )
 ```
 
@@ -82,14 +85,16 @@ multilingual_splitter = graphbit.SentenceSplitter(
 Hierarchically splits text using multiple separators, ideal for structured documents.
 
 ```python
+from graphbit import RecursiveSplitter
+
 # Create a recursive splitter
-splitter = graphbit.RecursiveSplitter(
+splitter = RecursiveSplitter(
     chunk_size=1000,
     chunk_overlap=100
 )
 
 # Custom separators for specific document types
-custom_splitter = graphbit.RecursiveSplitter(
+custom_splitter = RecursiveSplitter(
     chunk_size=1000,
     chunk_overlap=100,
     separators=["\n\n", "\n", ". ", " ", ""]
@@ -101,35 +106,37 @@ custom_splitter = graphbit.RecursiveSplitter(
 Use `TextSplitterConfig` for more control and flexibility:
 
 ```python
+from graphbit import TextSplitterConfig, TextSplitter
+
 # Character configuration
-config = graphbit.TextSplitterConfig.character(
+config = TextSplitterConfig.character(
     chunk_size=1000,
     chunk_overlap=200
 )
 
 # Token configuration
-config = graphbit.TextSplitterConfig.token(
+config = TextSplitterConfig.token(
     chunk_size=100,
     chunk_overlap=20,
     token_pattern=r'\w+'
 )
 
 # Code splitter configuration
-config = graphbit.TextSplitterConfig.code(
+config = TextSplitterConfig.code(
     chunk_size=500,
     chunk_overlap=50,
     language="python"
 )
 
 # Markdown splitter configuration
-config = graphbit.TextSplitterConfig.markdown(
+config = TextSplitterConfig.markdown(
     chunk_size=1000,
     chunk_overlap=100,
     split_by_headers=True
 )
 
 # Create splitter from config
-splitter = graphbit.TextSplitter(config)
+splitter = TextSplitter(config)
 ```
 
 ## Advanced Features
@@ -137,7 +144,9 @@ splitter = graphbit.TextSplitter(config)
 ### Processing Multiple Documents
 
 ```python
-splitter = graphbit.CharacterSplitter(1000, 200)
+from graphbit import CharacterSplitter
+
+splitter = CharacterSplitter(1000, 200)
 
 # Split multiple texts at once
 texts = [
@@ -155,6 +164,7 @@ for doc_idx, chunks in enumerate(all_chunks):
 ### Working with Chunk Metadata
 
 ```python
+# after defining splitters
 chunks = splitter.split_text(text)
 
 for chunk in chunks:
@@ -171,8 +181,10 @@ for chunk in chunks:
 ### Creating Documents for Vector Stores
 
 ```python
-splitter = graphbit.TextSplitter(
-    graphbit.TextSplitterConfig.character(1000, 200)
+from graphbit import TextSplitter, TextSplitterConfig, EmbeddingClient, EmbeddingConfig
+
+splitter = TextSplitter(
+    TextSplitterConfig.character(1000, 200)
 )
 
 # Create documents with metadata
@@ -218,7 +230,9 @@ Common sizes:
 
 #### Code Files
 ```python
-config = graphbit.TextSplitterConfig.code(
+from graphbit import TextSplitterConfig
+
+config = TextSplitterConfig.code(
     chunk_size=1000,
     chunk_overlap=100,
     language="python"
@@ -228,7 +242,9 @@ config.set_trim_whitespace(False)  # Preserve formatting
 
 #### Markdown Documents
 ```python
-config = graphbit.TextSplitterConfig.markdown(
+from graphbit import TextSplitterConfig
+
+config = TextSplitterConfig.markdown(
     chunk_size=1500,
     chunk_overlap=200,
     split_by_headers=True
@@ -237,8 +253,10 @@ config = graphbit.TextSplitterConfig.markdown(
 
 #### Unicode and Multilingual Text
 ```python
+from graphbit import CharacterSplitter
+
 # All splitters handle Unicode correctly
-splitter = graphbit.CharacterSplitter(100, 20)
+splitter = CharacterSplitter(100, 20)
 text = "Hello 世界! Emoji support 🚀"
 chunks = splitter.split_text(text)  # Works seamlessly
 ```
@@ -248,15 +266,14 @@ chunks = splitter.split_text(text)  # Works seamlessly
 Text splitters integrate seamlessly with other GraphBit components:
 
 ```python
-import graphbit
+from graphbit import init, RecursiveSplitter, EmbeddingClient, EmbeddingConfig
 
 # Initialize
-graphbit.init()
 
 # Create components
-splitter = graphbit.RecursiveSplitter(1000, 100)
-embedder = graphbit.EmbeddingClient(
-    graphbit.EmbeddingConfig.openai("your-api-key")
+splitter = RecursiveSplitter(1000, 100)
+embedder = EmbeddingClient(
+    EmbeddingConfig.openai("your-api-key")
 )
 
 # Process document
@@ -277,9 +294,11 @@ for chunk in chunks:
 ## Error Handling
 
 ```python
+from graphbit import CharacterSplitter
+
 try:
     # Invalid configuration
-    splitter = graphbit.CharacterSplitter(
+    splitter = CharacterSplitter(
         chunk_size=0,  # Error: must be > 0
         chunk_overlap=0
     )
@@ -293,7 +312,8 @@ def safe_split(text, chunk_size=1000, chunk_overlap=200):
     if chunk_overlap >= chunk_size:
         raise ValueError("Overlap must be less than chunk size")
     
-    splitter = graphbit.CharacterSplitter(chunk_size, chunk_overlap)
+    from graphbit import CharacterSplitter
+    splitter = CharacterSplitter(chunk_size, chunk_overlap)
     return splitter.split_text(text)
 ```
 
