@@ -76,7 +76,7 @@ splitter = SentenceSplitter(
 multilingual_splitter = SentenceSplitter(
     chunk_size=500,
     chunk_overlap=1,
-    sentence_endings=[r"\\.", r"!", r"\\?", r"。", r"！", r"？"]
+    sentence_endings=[r"\.", r"!", r"\?", r"。", r"！", r"？"]
 )
 ```
 
@@ -181,7 +181,7 @@ for chunk in chunks:
 ### Creating Documents for Vector Stores
 
 ```python
-from graphbit import TextSplitter, TextSplitterConfig, EmbeddingClient, EmbeddingConfig
+from graphbit import TextSplitter, TextSplitterConfig
 
 splitter = TextSplitter(
     TextSplitterConfig.character(1000, 200)
@@ -266,7 +266,7 @@ chunks = splitter.split_text(text)  # Works seamlessly
 Text splitters integrate seamlessly with other GraphBit components:
 
 ```python
-from graphbit import init, RecursiveSplitter, EmbeddingClient, EmbeddingConfig
+from graphbit import RecursiveSplitter, EmbeddingClient, EmbeddingConfig
 
 # Initialize
 
@@ -312,7 +312,6 @@ def safe_split(text, chunk_size=1000, chunk_overlap=200):
     if chunk_overlap >= chunk_size:
         raise ValueError("Overlap must be less than chunk size")
     
-    from graphbit import CharacterSplitter
     splitter = CharacterSplitter(chunk_size, chunk_overlap)
     return splitter.split_text(text)
 ```
