@@ -1,12 +1,23 @@
-//! Workflow integration tests
-//!
-//! Tests for workflow functionality, structure validation, and execution flows
-//! without using simulated agents.
+// Workflow integration tests
+//
+// Tests for workflow functionality, structure validation, and execution flows
+// without using simulated agents.
 
 use graphbit_core::{
     errors::GraphBitResult, graph::NodeType, llm::LlmConfig, types::AgentId, AgentConfig,
     WorkflowBuilder, WorkflowEdge, WorkflowNode,
 };
+
+#[test]
+fn test_agent_id_uniqueness() {
+    use graphbit_core::types::AgentId;
+    let id1 = AgentId::new();
+    let id2 = AgentId::new();
+    assert_ne!(
+        id1, id2,
+        "AgentId::new() did not generate unique IDs. This is a bug."
+    );
+}
 
 #[tokio::test]
 async fn test_simple_workflow_creation() -> GraphBitResult<()> {
@@ -172,17 +183,16 @@ async fn test_workflow_with_connections() -> GraphBitResult<()> {
 async fn test_workflow_complex_graph() {
     graphbit_core::init().expect("Failed to initialize GraphBit");
 
-    let agent_id_start = AgentId::new();
-    let agent_id_left = AgentId::new();
-    let agent_id_right = AgentId::new();
-    let agent_id_end = AgentId::new();
+    let _agent_id1 = AgentId::new();
+    let _agent_id2 = AgentId::new();
+
 
     // Create start node
     let start_node = WorkflowNode::new(
         "Start",
         "Starting node",
         NodeType::Agent {
-            agent_id: agent_id_start,
+            agent_id: AgentId::new(),
             prompt_template: "Start processing".to_string(),
         },
     );
@@ -192,7 +202,7 @@ async fn test_workflow_complex_graph() {
         "Left",
         "Left branch",
         NodeType::Agent {
-            agent_id: agent_id_left,
+            agent_id: AgentId::new(),
             prompt_template: "Process left branch".to_string(),
         },
     );
@@ -202,7 +212,7 @@ async fn test_workflow_complex_graph() {
         "Right",
         "Right branch",
         NodeType::Agent {
-            agent_id: agent_id_right,
+            agent_id: AgentId::new(),
             prompt_template: "Process right branch".to_string(),
         },
     );
@@ -212,7 +222,7 @@ async fn test_workflow_complex_graph() {
         "End",
         "Merging node",
         NodeType::Agent {
-            agent_id: agent_id_end,
+            agent_id: AgentId::new(),
             prompt_template: "Merge results".to_string(),
         },
     );
