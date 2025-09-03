@@ -12,6 +12,7 @@ use std::sync::Arc;
 use tokio::runtime::Runtime;
 
 // API Key Helpers
+#[allow(dead_code)]
 pub fn has_openai_key() -> bool {
     env::var("OPENAI_API_KEY").is_ok()
 }
@@ -125,6 +126,7 @@ pub fn create_test_executor() -> WorkflowExecutor {
         .with_fail_fast(true)
 }
 
+#[allow(dead_code)]
 // Temporary File Helper
 pub fn create_temp_file(content: &str) -> tempfile::NamedTempFile {
     use std::io::Write;
@@ -173,6 +175,104 @@ where
 {
     let rt = Runtime::new().unwrap();
     rt.block_on(future)
+}
+
+// Additional helpers for comprehensive tests
+#[allow(dead_code)]
+/// Create a mock LLM configuration for testing
+pub fn create_mock_llm_config() -> graphbit_core::llm::LlmConfig {
+    graphbit_core::llm::LlmConfig::OpenAI {
+        api_key: "test-api-key".to_string(),
+        model: "gpt-3.5-turbo".to_string(),
+        base_url: None,
+        organization: None,
+    }
+}
+
+#[allow(dead_code)]
+/// Create a test retry configuration
+pub fn create_test_retry_config() -> graphbit_core::types::RetryConfig {
+    graphbit_core::types::RetryConfig::new(3)
+        .with_exponential_backoff(100, 2.0, 5000)
+        .with_jitter(0.1)
+}
+
+#[allow(dead_code)]
+/// Create various test error types
+pub fn create_test_errors() -> Vec<graphbit_core::errors::GraphBitError> {
+    vec![
+        graphbit_core::errors::GraphBitError::Configuration {
+            message: "Test config error".to_string(),
+        },
+        graphbit_core::errors::GraphBitError::Network {
+            message: "Test network error".to_string(),
+        },
+        graphbit_core::errors::GraphBitError::LlmProvider {
+            provider: "test_provider".to_string(),
+            message: "Test LLM error".to_string(),
+        },
+        graphbit_core::errors::GraphBitError::Agent {
+            agent_id: "test-agent".to_string(),
+            message: "Test agent error".to_string(),
+        },
+        graphbit_core::errors::GraphBitError::Validation {
+            field: "test_field".to_string(),
+            message: "Test validation error".to_string(),
+        },
+        graphbit_core::errors::GraphBitError::RateLimit {
+            provider: "test_provider".to_string(),
+            retry_after_seconds: 30,
+        },
+    ]
+}
+
+#[allow(dead_code)]
+/// Wait for a condition to be true with timeout
+pub async fn wait_for_condition<F>(
+    mut condition: F,
+    timeout_ms: u64,
+    check_interval_ms: u64,
+) -> bool
+where
+    F: FnMut() -> bool,
+{
+    let start = std::time::Instant::now();
+    let timeout = std::time::Duration::from_millis(timeout_ms);
+    let interval = std::time::Duration::from_millis(check_interval_ms);
+
+    while start.elapsed() < timeout {
+        if condition() {
+            return true;
+        }
+        tokio::time::sleep(interval).await;
+    }
+
+    false
+}
+
+#[allow(dead_code)]
+/// Measure execution time of an async operation
+pub async fn measure_async_execution_time<F, Fut, T>(operation: F) -> (T, std::time::Duration)
+where
+    F: FnOnce() -> Fut,
+    Fut: std::future::Future<Output = T>,
+{
+    let start = std::time::Instant::now();
+    let result = operation().await;
+    let duration = start.elapsed();
+    (result, duration)
+}
+
+#[allow(dead_code)]
+/// Measure execution time of a sync operation
+pub fn measure_execution_time<F, T>(operation: F) -> (T, std::time::Duration)
+where
+    F: FnOnce() -> T,
+{
+    let start = std::time::Instant::now();
+    let result = operation();
+    let duration = start.elapsed();
+    (result, duration)
 }
 
 // Skip macro intentionally removed to avoid duplicate definitions across modules
