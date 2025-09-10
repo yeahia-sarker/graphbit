@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
-"""
-Workflow Orchestrator for GraphBit CI/CD Pipeline
+"""Workflow Orchestrator for GraphBit CI/CD Pipeline.
 
 This script manages the coordination between different workflow phases,
 handles status propagation, and ensures proper execution order.
@@ -8,14 +7,12 @@ handles status propagation, and ensures proper execution order.
 
 import argparse
 import json
-import os
 import sys
-import time
 from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 
 
 class WorkflowPhase(Enum):
@@ -47,10 +44,11 @@ class WorkflowResult:
     start_time: datetime
     end_time: Optional[datetime] = None
     duration: Optional[float] = None
-    artifacts: List[str] = None
+    artifacts: Optional[List[str]] = None
     error_message: Optional[str] = None
 
     def __post_init__(self):
+        """Initialize artifacts list if None."""
         if self.artifacts is None:
             self.artifacts = []
 
@@ -59,6 +57,11 @@ class WorkflowOrchestrator:
     """Orchestrates the execution of modular workflows."""
 
     def __init__(self, root_path: Path):
+        """Initialize the workflow orchestrator.
+
+        Args:
+            root_path: Root path of the project
+        """
         self.root_path = root_path
         self.status_file = root_path / ".github" / "workflow-status.json"
         self.artifacts_dir = root_path / ".github" / "artifacts"
@@ -128,7 +131,7 @@ class WorkflowOrchestrator:
         print(f"Phase {phase.value} started successfully")
         return True
 
-    def complete_phase(self, phase: WorkflowPhase, success: bool, artifacts: List[str] = None, error_message: str = None) -> bool:
+    def complete_phase(self, phase: WorkflowPhase, success: bool, artifacts: Optional[List[str]] = None, error_message: Optional[str] = None) -> bool:
         """Complete a workflow phase."""
         if phase not in self.results:
             print(f"Error: Phase {phase.value} was not started")
@@ -140,7 +143,10 @@ class WorkflowOrchestrator:
         result.status = WorkflowStatus.SUCCESS if success else WorkflowStatus.FAILURE
 
         if artifacts:
-            result.artifacts.extend(artifacts)
+            if result.artifacts is not None:
+                result.artifacts.extend(artifacts)
+            else:
+                result.artifacts = artifacts
 
         if error_message:
             result.error_message = error_message
@@ -187,16 +193,16 @@ class WorkflowOrchestrator:
     def get_phase_artifacts(self, phase: WorkflowPhase) -> List[str]:
         """Get artifacts from a specific phase."""
         if phase in self.results:
-            return self.results[phase].artifacts
+            return self.results[phase].artifacts or []
         return []
 
     def is_pipeline_ready_for_phase(self, phase: WorkflowPhase) -> bool:
         """Check if the pipeline is ready for a specific phase."""
         return self._check_prerequisites(phase)
 
-    def get_pipeline_status(self) -> Dict:
+    def get_pipeline_status(self) -> Dict[str, Any]:
         """Get overall pipeline status."""
-        status = {"phases": {}, "overall_status": "pending", "completed_phases": 0, "total_phases": len(WorkflowPhase), "current_phase": None, "next_phase": None}
+        status: Dict[str, Any] = {"phases": {}, "overall_status": "pending", "completed_phases": 0, "total_phases": len(WorkflowPhase), "current_phase": None, "next_phase": None}
 
         completed_count = 0
         failed_phases = []
@@ -205,7 +211,7 @@ class WorkflowOrchestrator:
         for phase in WorkflowPhase:
             if phase in self.results:
                 result = self.results[phase]
-                status["phases"][phase.value] = {"status": result.status.value, "duration": result.duration, "artifacts_count": len(result.artifacts)}
+                status["phases"][phase.value] = {"status": result.status.value, "duration": result.duration, "artifacts_count": len(result.artifacts or [])}
 
                 if result.status == WorkflowStatus.SUCCESS:
                     completed_count += 1
@@ -272,7 +278,7 @@ class WorkflowOrchestrator:
 
 
 def main():
-    """Main entry point for workflow orchestrator."""
+    """Run the workflow orchestrator."""
     parser = argparse.ArgumentParser(description="GraphBit Workflow Orchestrator", formatter_class=argparse.RawDescriptionHelpFormatter)
 
     parser.add_argument("command", choices=["start", "complete", "status", "reset", "check"], help="Command to execute")

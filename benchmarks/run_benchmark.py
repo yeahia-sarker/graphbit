@@ -87,7 +87,6 @@ class ComprehensiveBenchmarkRunner:
         num_runs: Optional[int] = None,
     ):
         """Initialize the benchmark runner with configuration."""
-
         self.verbose = verbose
         self.llm_config = llm_config
         self.concurrency = concurrency

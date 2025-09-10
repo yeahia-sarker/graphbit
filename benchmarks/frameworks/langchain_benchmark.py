@@ -45,7 +45,6 @@ class LangChainBenchmark(BaseBenchmark):
 
     async def setup(self) -> None:
         """Set up LangChain for benchmarking."""
-
         # Get LLM configuration from config
         llm_config_obj: LLMConfig | None = self.config.get("llm_config")
         if not llm_config_obj:

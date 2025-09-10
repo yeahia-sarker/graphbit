@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
-"""
-Legacy Workflow Migration Tool for GraphBit
+"""Legacy Workflow Migration Tool for GraphBit.
 
 This script handles the safe migration from monolithic workflows (ci.yml, release.yml)
 to the new modular workflow system, ensuring no functionality is lost.
@@ -8,16 +7,18 @@ to the new modular workflow system, ensuring no functionality is lost.
 
 import argparse
 import json
-import os
+import logging
 import shutil
-import subprocess
+import subprocess  # nosec B404: import of 'subprocess'
 import sys
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import List, Optional
 
 import yaml
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -35,6 +36,12 @@ class LegacyMigrator:
     """Handles migration from legacy to modular workflows."""
 
     def __init__(self, root_path: Path, dry_run: bool = False):
+        """Initialize the legacy migrator.
+
+        Args:
+            root_path: Root path of the project
+            dry_run: Whether to run in dry-run mode
+        """
         self.root_path = root_path
         self.dry_run = dry_run
         self.workflows_dir = root_path / ".github" / "workflows"
@@ -213,7 +220,7 @@ class LegacyMigrator:
 
                 # Test script execution
                 try:
-                    result = subprocess.run([sys.executable, str(script_path), "--help"], capture_output=True, text=True, cwd=self.root_path, timeout=30)
+                    result = subprocess.run([sys.executable, str(script_path), "--help"], capture_output=True, text=True, cwd=self.root_path, timeout=30, shell=False)  # nosec
 
                     if result.returncode == 0:
                         print(f"   [PASS] {script_name} - Functional")
@@ -255,7 +262,10 @@ class LegacyMigrator:
 
             # Get repository info from git
             try:
-                repo_info = subprocess.run(["git", "remote", "get-url", "origin"], capture_output=True, text=True, cwd=self.root_path, timeout=30)
+                git_path = shutil.which("git")
+                if not git_path:
+                    raise FileNotFoundError("git executable not found in PATH")
+                repo_info = subprocess.run([git_path, "remote", "get-url", "origin"], capture_output=True, text=True, cwd=self.root_path, timeout=30, shell=False)  # nosec
 
                 if repo_info.returncode == 0:
                     # Parse repo owner and name from URL
@@ -268,10 +278,11 @@ class LegacyMigrator:
                             repo_name = parts[-1]
 
                             # Run preflight checks only (don't need full API access for migration)
+                            print(f"   [INFO] Detected repository: https://github.com/{repo_owner}/{repo_name}")
                             print("   [TEST] Running basic workflow validation...")
 
                             # Just validate that the tester can run
-                            test_result = subprocess.run([sys.executable, str(tester_script), "--help"], capture_output=True, text=True, cwd=self.root_path, timeout=30)
+                            test_result = subprocess.run([sys.executable, str(tester_script), "--help"], capture_output=True, text=True, cwd=self.root_path, timeout=30, shell=False)  # nosec
 
                             if test_result.returncode == 0:
                                 print("   [PASS] Workflow tester functional")
@@ -280,8 +291,8 @@ class LegacyMigrator:
                                 print("   [FAIL] Workflow tester not functional")
                                 return False
 
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning(f"Failed to get repository info: {e}")
 
             print("   [WARN] Could not determine repository info, skipping workflow tests")
             return True
@@ -429,7 +440,7 @@ class LegacyMigrator:
                     print(f"- Fix {step.name}: {step.error}")
 
         # Show step details
-        print(f"\n[STEP DETAILS]:")
+        print("\n[STEP DETAILS]:")
         for step in self.steps:
             status = "[PASS]" if step.completed else "[FAIL]" if step.error else "[PENDING]"
             required = "Required" if step.required else "Optional"
@@ -439,7 +450,7 @@ class LegacyMigrator:
 
 
 def main():
-    """Main entry point for legacy migrator."""
+    """Run the legacy migrator."""
     parser = argparse.ArgumentParser(description="GraphBit Legacy Workflow Migration Tool", formatter_class=argparse.RawDescriptionHelpFormatter)
 
     parser.add_argument("--root", type=Path, default=Path.cwd(), help="Root directory of the project")

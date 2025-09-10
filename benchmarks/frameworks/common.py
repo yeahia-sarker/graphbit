@@ -52,7 +52,7 @@ class LLMConfig:
 # Provider-specific model presets
 PROVIDER_MODELS = {
     LLMProvider.OPENAI: ["gpt-4o", "gpt-4o-mini", "gpt-4-turbo", "gpt-3.5-turbo", "o1-preview", "o1-mini"],
-    LLMProvider.ANTHROPIC: ["claude-3-5-sonnet-20241022", "claude-3-5-haiku-20241022", "claude-3-opus-20240229", "claude-3-sonnet-20240229", "claude-3-haiku-20240307"],
+    LLMProvider.ANTHROPIC: ["claude-3-5-haiku-20241022", "claude-3-opus-20240229", "claude-3-sonnet-20240229", "claude-3-haiku-20240307"],
     LLMProvider.OLLAMA: ["llama3.2", "llama3.1", "codellama", "mistral", "phi3", "qwen2.5"],
 }
 
@@ -146,7 +146,6 @@ class PerformanceMonitor:
 
     def __init__(self) -> None:
         """Initialize the performance monitor."""
-
         self.process = psutil.Process()
         self.start_time: float = 0.0
         self.start_memory: float = 0.0

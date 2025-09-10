@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
-"""
-Advanced Version Synchronization and Detection Script
+"""Advanced Version Synchronization and Detection Script.
 
 This script provides comprehensive version management for GraphBit:
 - Detects authoritative version from multiple sources (local files, git tags, GitHub releases)
@@ -17,16 +16,19 @@ Usage:
 
 import argparse
 import json
+import logging
 import re
-import subprocess
+import shutil
+import subprocess  # nosec B404: import of 'subprocess'
 import sys
-import urllib.error
-import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, List, Optional, Set, Tuple
+from typing import Dict, List, Optional, Tuple
 
+import requests
 from packaging import version
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -71,6 +73,11 @@ class AdvancedVersionManager:
     """Advanced version management with remote detection and conflict resolution."""
 
     def __init__(self, root_path: Path):
+        """Initialize the version manager.
+
+        Args:
+            root_path: Root path of the project
+        """
         self.root_path = root_path
         self.version_refs: List[VersionReference] = []
         self.remote_versions: Dict[str, str] = {}
@@ -92,7 +99,10 @@ class AdvancedVersionManager:
 
         # Get git tags
         try:
-            result = subprocess.run(["git", "tag", "--sort=-version:refname"], capture_output=True, text=True, cwd=self.root_path)
+            git_path = shutil.which("git")
+            if not git_path:
+                raise FileNotFoundError("git executable not found in PATH")
+            result = subprocess.run([git_path, "tag", "--sort=-version:refname"], capture_output=True, text=True, cwd=self.root_path, shell=False)  # nosec
             if result.returncode == 0:
                 tags = [tag.strip() for tag in result.stdout.split("\n") if tag.strip()]
                 if tags:
@@ -108,11 +118,12 @@ class AdvancedVersionManager:
         # Get GitHub releases
         try:
             url = f"https://api.github.com/repos/{self.github_repo}/releases/latest"
-            with urllib.request.urlopen(url) as response:
-                data = json.loads(response.read().decode())
-                tag_name = data.get("tag_name", "")
-                clean_version = tag_name.lstrip("v")
-                remote_versions["github_latest_release"] = clean_version
+            response = requests.get(url, timeout=30)
+            response.raise_for_status()  # Raise an exception for bad status codes
+            data = response.json()
+            tag_name = data.get("tag_name", "")
+            clean_version = tag_name.lstrip("v")
+            remote_versions["github_latest_release"] = clean_version
         except Exception as e:
             print(f"Warning: Could not fetch GitHub releases: {e}")
 
@@ -159,11 +170,9 @@ class AdvancedVersionManager:
         authoritative = version_sources[0]
 
         # Check for version conflicts
-        remote_higher = False
         for source in version_sources[1:]:
             if source.source_type == "remote" and version.parse(source.version) > version.parse(authoritative.version):
-                remote_higher = True
-                recommendations.append(f"REMOTE version {source.version} is higher than local {authoritative.version}. " f"Consider updating local versions.")
+                recommendations.append(f"🚀 Remote version {source.version} is higher than local {authoritative.version}. " f"Consider updating local versions.")
                 break
 
         return authoritative.version, recommendations
@@ -258,10 +267,8 @@ class AdvancedVersionManager:
         # Find inconsistencies
         inconsistencies = []
         for ref in self.version_refs:
-            if ref.version != authoritative_version:
-                # Skip CHANGELOG.md as it can have multiple versions
-                if "CHANGELOG.md" not in ref.file_path:
-                    inconsistencies.append((ref.file_path, ref.version, authoritative_version))
+            if ref.version != authoritative_version and "CHANGELOG.md" not in ref.file_path and "CHANGELOG.md" not in ref.file_path:
+                inconsistencies.append((ref.file_path, ref.version, authoritative_version))
 
         # Determine if promotion is needed
         needs_promotion = False
@@ -273,8 +280,8 @@ class AdvancedVersionManager:
                     try:
                         version.parse(v)  # Validate version format
                         valid_remote_versions.append(v)
-                    except:
-                        continue
+                    except Exception as e:
+                        logger.warning(f"Invalid remote version format: {v}. Error: {e}")
 
             if valid_remote_versions:
                 latest_remote = max(valid_remote_versions, key=lambda x: version.parse(x))
@@ -301,31 +308,31 @@ class AdvancedVersionManager:
         print(f"\n>> AUTHORITATIVE VERSION: {report.authoritative_version}")
 
         if report.recommendations:
-            print(f"\n>> RECOMMENDATIONS:")
+            print("\n💡 RECOMMENDATIONS:")
             for rec in report.recommendations:
                 print(f"   {rec}")
 
-        print(f"\n>> MASTER SOURCES:")
+        print("\n📊 MASTER SOURCES:")
         for file_path, ver in report.master_versions.items():
             status = "OK" if ver == report.authoritative_version else "MISMATCH"
             print(f"   {status} {file_path}: {ver}")
 
-        print(f"\n>> DERIVED SOURCES:")
+        print("\n🔗 DERIVED SOURCES:")
         for file_path, ver in report.derived_versions.items():
             status = "OK" if ver == report.authoritative_version else "MISMATCH"
             print(f"   {status} {file_path}: {ver}")
 
         if report.remote_versions:
-            print(f"\n>> REMOTE SOURCES:")
+            print("\n🌐 REMOTE SOURCES:")
             for source, ver in report.remote_versions.items():
                 print(f"   >> {source}: {ver}")
 
         if report.inconsistencies:
-            print(f"\n>> INCONSISTENCIES FOUND:")
+            print("\n🚨 INCONSISTENCIES FOUND:")
             for file_path, found_ver, expected_ver in report.inconsistencies:
                 print(f"   MISMATCH {file_path}: {found_ver} (expected {expected_ver})")
 
-        print(f"\n>> SYNCHRONIZATION STATUS:")
+        print("\n📈 SYNCHRONIZATION STATUS:")
         if report.is_synchronized:
             print("   OK All versions are synchronized!")
         else:
@@ -357,12 +364,12 @@ class AdvancedVersionManager:
         # Cargo.toml workspace version
         if self._update_file_version("Cargo.toml", r'^version = "[^"]+"', f'version = "{target_version}"'):
             files_updated.append("Cargo.toml")
-            print(f"   >> Updated Cargo.toml")
+            print("   ✅ Updated Cargo.toml")
 
         # Python pyproject.toml
         if self._update_file_version("python/pyproject.toml", r'version = "[^"]+"', f'version = "{target_version}"'):
             files_updated.append("python/pyproject.toml")
-            print(f"   >> Updated python/pyproject.toml")
+            print("   ✅ Updated python/pyproject.toml")
 
         # 2. Derived sources
         print(">> Updating derived sources...")
@@ -370,12 +377,12 @@ class AdvancedVersionManager:
         # Root pyproject.toml
         if self._update_file_version("pyproject.toml", r'^version = "[^"]+"', f'version = "{target_version}"'):
             files_updated.append("pyproject.toml")
-            print(f"   >> Updated pyproject.toml")
+            print("   ✅ Updated pyproject.toml")
 
         # Benchmarks __init__.py
         if self._update_file_version("benchmarks/frameworks/__init__.py", r'__version__ = "[^"]+"', f'__version__ = "{target_version}"'):
             files_updated.append("benchmarks/frameworks/__init__.py")
-            print(f"   >> Updated benchmarks/frameworks/__init__.py")
+            print("   ✅ Updated benchmarks/frameworks/__init__.py")
 
         # README files
         readme_files = ["README.md", "core/README.md", "python/README.md"]
@@ -396,9 +403,9 @@ class AdvancedVersionManager:
             for file_path in files_updated:
                 print(f"   - {file_path}")
 
-            print(f"\n>> Next steps:")
-            print(f"   1. Review the changes: git diff")
-            print(f"   2. Test the build: make test")
+            print("\n💡 Next steps:")
+            print("   1. Review the changes: git diff")
+            print("   2. Test the build: make test")
             print(f"   3. Commit changes: git add . && git commit -m 'chore: bump version to {target_version}'")
             print(f"   4. Create release: git tag v{target_version} && git push --tags")
 
@@ -410,9 +417,12 @@ class AdvancedVersionManager:
 
         try:
             # Import and use the changelog generator
-            import subprocess
+            import subprocess  # nosec B404: import of 'subprocess'
 
-            result = subprocess.run(["python", "scripts/generate-changelog.py", "--version", target_version], capture_output=True, text=True, cwd=self.root_path)
+            python_path = shutil.which("python")
+            if not python_path:
+                raise FileNotFoundError("python executable not found in PATH")
+            result = subprocess.run([python_path, "scripts/generate-changelog.py", "--version", target_version], capture_output=True, text=True, cwd=self.root_path, shell=False)  # nosec
 
             if result.returncode == 0:
                 print(f">> Successfully generated changelog entry for {target_version}")
@@ -558,6 +568,7 @@ class AdvancedVersionManager:
 
 
 def main():
+    """Run the version synchronization script."""
     parser = argparse.ArgumentParser(
         description="Advanced GraphBit Version Management System",
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -610,8 +621,8 @@ Examples:
                     try:
                         version.parse(v)
                         valid_remote_versions.append(v)
-                    except:
-                        continue
+                    except Exception as e:
+                        logger.warning(f"Invalid remote version format: {v}. Error: {e}")
 
             if valid_remote_versions:
                 latest_remote = max(valid_remote_versions, key=lambda x: version.parse(x))
@@ -620,7 +631,7 @@ Examples:
         sys.exit(0)
 
     if args.fix and not report.is_synchronized:
-        print(f"\n>> FIXING INCONSISTENCIES...")
+        print("\n🔧 FIXING INCONSISTENCIES...")
         success = manager.promote_version(report.authoritative_version)
         sys.exit(0 if success else 1)
 
@@ -628,7 +639,7 @@ Examples:
     if report.is_synchronized:
         print(f"\n>> SUCCESS: All versions are synchronized at {report.authoritative_version}!")
         if report.needs_promotion:
-            print(f">> Note: Remote versions are higher. Consider updating with --promote-version")
+            print("💡 Note: Remote versions are higher. Consider updating with --promote-version")
         sys.exit(0)
     else:
         print(f"\n>> ISSUES FOUND: {len(report.inconsistencies)} version inconsistencies detected")

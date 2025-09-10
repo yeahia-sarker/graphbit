@@ -7,7 +7,6 @@ OPTIMIZED VERSION: Uses direct LLM client calls instead of workflow overhead for
 
 import contextlib
 import os
-import sys
 from typing import Dict, Optional
 
 from graphbit import LlmClient, LlmConfig, configure_runtime, init

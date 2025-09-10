@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
-"""
-Testing Runner for GraphBit CI/CD Pipeline
+"""Testing Runner for GraphBit CI/CD Pipeline.
 
 This script handles comprehensive testing including unit tests,
 integration tests, and coverage reporting.
@@ -8,13 +7,14 @@ integration tests, and coverage reporting.
 
 import argparse
 import os
-import subprocess
+import shutil
+import subprocess  # nosec B404: import of 'subprocess'
 import sys
 import time
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import List, Optional, Tuple
 
 
 @dataclass
@@ -33,6 +33,11 @@ class TestingRunner:
     """Runs comprehensive test suites."""
 
     def __init__(self, root_path: Path):
+        """Initialize the testing runner.
+
+        Args:
+            root_path: Root path of the project
+        """
         self.root_path = root_path
         self.results: List[TestResult] = []
         self.artifacts_dir = root_path / ".github" / "artifacts"
@@ -89,9 +94,18 @@ class TestingRunner:
     def _run_rust_tests(self) -> Tuple[bool, str, Optional[str], Optional[float]]:
         """Run Rust unit tests."""
         try:
+            cargo_path = shutil.which("cargo")
+            if not cargo_path:
+                raise FileNotFoundError("cargo executable not found in PATH")
             result = subprocess.run(
-                ["cargo", "test", "--workspace", "--lib", "--bins", "--verbose"], capture_output=True, text=True, cwd=self.root_path, timeout=600, env={**os.environ, "RUST_BACKTRACE": "1"}
-            )
+                [cargo_path, "test", "--workspace", "--lib", "--bins", "--verbose"],
+                capture_output=True,
+                text=True,
+                cwd=self.root_path,
+                timeout=600,
+                env={**os.environ, "RUST_BACKTRACE": "1"},
+                shell=False,
+            )  # nosec
 
             return result.returncode == 0, result.stdout, result.stderr if result.returncode != 0 else None, None
 
@@ -103,9 +117,12 @@ class TestingRunner:
     def _run_rust_integration_tests(self) -> Tuple[bool, str, Optional[str], Optional[float]]:
         """Run Rust integration tests."""
         try:
+            cargo_path = shutil.which("cargo")
+            if not cargo_path:
+                raise FileNotFoundError("cargo executable not found in PATH")
             result = subprocess.run(
-                ["cargo", "test", "--workspace", "--tests", "--verbose"], capture_output=True, text=True, cwd=self.root_path, timeout=900, env={**os.environ, "RUST_BACKTRACE": "1"}
-            )
+                [cargo_path, "test", "--workspace", "--tests", "--verbose"], capture_output=True, text=True, cwd=self.root_path, timeout=900, env={**os.environ, "RUST_BACKTRACE": "1"}, shell=False
+            )  # nosec
 
             return result.returncode == 0, result.stdout, result.stderr if result.returncode != 0 else None, None
 
@@ -118,7 +135,10 @@ class TestingRunner:
         """Run Python unit tests."""
         try:
             # First, try to build the Python extension
-            build_result = subprocess.run(["python", "-m", "pip", "install", "-e", "python/"], capture_output=True, text=True, cwd=self.root_path, timeout=300)
+            python_path = shutil.which("python")
+            if not python_path:
+                raise FileNotFoundError("python executable not found in PATH")
+            build_result = subprocess.run([python_path, "-m", "pip", "install", "-e", "python/"], capture_output=True, text=True, cwd=self.root_path, timeout=300, shell=False)  # nosec
 
             if build_result.returncode != 0:
                 return False, build_result.stdout, f"Failed to build Python extension: {build_result.stderr}", None
@@ -133,7 +153,7 @@ class TestingRunner:
             if not test_paths:
                 return True, "No Python tests found, skipping", None, None
 
-            result = subprocess.run(["python", "-m", "pytest"] + test_paths + ["-v", "--tb=short"], capture_output=True, text=True, cwd=self.root_path, timeout=600)
+            result = subprocess.run(["python", "-m", "pytest"] + test_paths + ["-v", "--tb=short"], capture_output=True, text=True, cwd=self.root_path, timeout=600, shell=False)  # nosec
 
             return result.returncode == 0, result.stdout, result.stderr if result.returncode != 0 else None, None
 
@@ -156,8 +176,14 @@ class TestingRunner:
                 return True, "No Python integration tests found, skipping", None, None
 
             result = subprocess.run(
-                ["python", "-m", "pytest"] + integration_paths + ["-v", "--tb=short"], capture_output=True, text=True, cwd=self.root_path, timeout=900, env={**os.environ, "TEST_REMOTE_URLS": "true"}
-            )
+                ["python", "-m", "pytest"] + integration_paths + ["-v", "--tb=short"],
+                capture_output=True,
+                text=True,
+                cwd=self.root_path,
+                timeout=900,
+                env={**os.environ, "TEST_REMOTE_URLS": "true"},
+                shell=False,
+            )  # nosec
 
             return result.returncode == 0, result.stdout, result.stderr if result.returncode != 0 else None, None
 
@@ -172,7 +198,12 @@ class TestingRunner:
             # Run Rust coverage with tarpaulin
             rust_coverage = None
             try:
-                result = subprocess.run(["cargo", "tarpaulin", "--workspace", "--out", "Xml", "--output-dir", "target/coverage"], capture_output=True, text=True, cwd=self.root_path, timeout=900)
+                cargo_path = shutil.which("cargo")
+                if not cargo_path:
+                    raise FileNotFoundError("cargo executable not found in PATH")
+                result = subprocess.run(
+                    [cargo_path, "tarpaulin", "--workspace", "--out", "Xml", "--output-dir", "target/coverage"], capture_output=True, text=True, cwd=self.root_path, timeout=900, shell=False
+                )  # nosec
 
                 if result.returncode == 0:
                     # Try to extract coverage percentage
@@ -196,8 +227,13 @@ class TestingRunner:
 
                 if test_paths:
                     result = subprocess.run(
-                        ["python", "-m", "pytest"] + test_paths + ["--cov=graphbit", "--cov-report=xml", "--cov-report=term-missing"], capture_output=True, text=True, cwd=self.root_path, timeout=600
-                    )
+                        ["python", "-m", "pytest"] + test_paths + ["--cov=graphbit", "--cov-report=xml", "--cov-report=term-missing"],
+                        capture_output=True,
+                        text=True,
+                        cwd=self.root_path,
+                        timeout=600,
+                        shell=False,
+                    )  # nosec
 
                     if result.returncode == 0:
                         # Try to extract coverage percentage
@@ -228,7 +264,10 @@ class TestingRunner:
             if not (self.root_path / "benches").exists():
                 return True, "No benchmarks found, skipping performance tests", None, None
 
-            result = subprocess.run(["cargo", "bench", "--workspace"], capture_output=True, text=True, cwd=self.root_path, timeout=1200)
+            cargo_path = shutil.which("cargo")
+            if not cargo_path:
+                raise FileNotFoundError("cargo executable not found in PATH")
+            result = subprocess.run([cargo_path, "bench", "--workspace"], capture_output=True, text=True, cwd=self.root_path, timeout=1200, shell=False)  # nosec
 
             return result.returncode == 0, result.stdout, result.stderr if result.returncode != 0 else None, None
 
@@ -299,7 +338,7 @@ class TestingRunner:
 
 
 def main():
-    """Main entry point for testing runner."""
+    """Run the testing runner."""
     parser = argparse.ArgumentParser(description="GraphBit Testing Runner", formatter_class=argparse.RawDescriptionHelpFormatter)
 
     parser.add_argument("--root", type=Path, default=Path.cwd(), help="Root directory of the project")

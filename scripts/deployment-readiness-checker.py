@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
-"""
-Deployment Readiness Checker for GraphBit Modular Workflows
+"""Deployment Readiness Checker for GraphBit Modular Workflows.
 
 This script performs final validation before deploying the modular workflow system,
 ensuring all components are ready for production use.
@@ -8,15 +7,18 @@ ensuring all components are ready for production use.
 
 import argparse
 import json
+import logging
 import os
-import subprocess
+import shutil
+import subprocess  # nosec B404: import of 'subprocess'
 import sys
-import time
 from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import List, Optional
+
+logger = logging.getLogger(__name__)
 
 
 class ReadinessLevel(Enum):
@@ -44,6 +46,11 @@ class DeploymentReadinessChecker:
     """Checks if the modular workflow system is ready for deployment."""
 
     def __init__(self, root_path: Path):
+        """Initialize the deployment readiness checker.
+
+        Args:
+            root_path: Root path of the project
+        """
         self.root_path = root_path
         self.checks: List[ReadinessCheck] = []
 
@@ -220,7 +227,7 @@ class DeploymentReadinessChecker:
 
             # Test script execution
             try:
-                result = subprocess.run([sys.executable, str(script_path), "--help"], capture_output=True, text=True, cwd=self.root_path, timeout=30)
+                result = subprocess.run([sys.executable, str(script_path), "--help"], capture_output=True, text=True, cwd=self.root_path, timeout=30, shell=False)  # nosec
 
                 if result.returncode == 0:
                     working_scripts.append(script)
@@ -376,7 +383,10 @@ class DeploymentReadinessChecker:
 
         # Check git configuration
         try:
-            result = subprocess.run(["git", "remote", "get-url", "origin"], capture_output=True, text=True, cwd=self.root_path, timeout=30)
+            git_path = shutil.which("git")
+            if not git_path:
+                raise FileNotFoundError("git executable not found in PATH")
+            result = subprocess.run([git_path, "remote", "get-url", "origin"], capture_output=True, text=True, cwd=self.root_path, timeout=30, shell=False)  # nosec
 
             if result.returncode == 0 and "github.com" in result.stdout:
                 self.checks.append(
@@ -423,8 +433,8 @@ class DeploymentReadinessChecker:
                     if "token:" in content and "secrets." not in content:
                         security_issues.append(f"Potential hardcoded token in {workflow_file}")
 
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.warning(f"Failed to read {workflow_file}: {e}")
 
         if security_issues:
             self.checks.append(
@@ -540,7 +550,7 @@ class DeploymentReadinessChecker:
 
         # Show detailed results
         if self.checks:
-            print(f"\n📋 Detailed Results:")
+            print("\n📋 Detailed Results:")
 
             for check in self.checks:
                 if check.level == ReadinessLevel.CRITICAL:
@@ -560,8 +570,8 @@ class DeploymentReadinessChecker:
 
         # Provide next steps
         if deployment_ready:
-            print(f"\n🎉 DEPLOYMENT APPROVED!")
-            print(f"\n📋 Next Steps:")
+            print("\n🎉 DEPLOYMENT APPROVED!")
+            print("\n📋 Next Steps:")
             print("1. Commit and push the modular workflow changes")
             print("2. Update branch protection rules to use new workflow names")
             print("3. Monitor the first few workflow runs carefully")
@@ -570,8 +580,8 @@ class DeploymentReadinessChecker:
             if warning_count > 0:
                 print(f"\n⚠️  Address {warning_count} warnings when possible")
         else:
-            print(f"\n🛑 DEPLOYMENT BLOCKED!")
-            print(f"\n📋 Required Actions:")
+            print("\n🛑 DEPLOYMENT BLOCKED!")
+            print("\n📋 Required Actions:")
 
             for check in self.checks:
                 if check.level in [ReadinessLevel.CRITICAL, ReadinessLevel.NOT_READY]:
@@ -611,7 +621,7 @@ class DeploymentReadinessChecker:
 
 
 def main():
-    """Main entry point for deployment readiness checker."""
+    """Run the deployment readiness checker."""
     parser = argparse.ArgumentParser(description="GraphBit Deployment Readiness Checker", formatter_class=argparse.RawDescriptionHelpFormatter)
 
     parser.add_argument("--root", type=Path, default=Path.cwd(), help="Root directory of the project")

@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
-"""
-Comprehensive Test Suite Runner for GraphBit Modular Workflows
+"""Comprehensive Test Suite Runner for GraphBit Modular Workflows.
 
 This script orchestrates all testing activities for the modular workflow system,
 providing a single entry point for comprehensive validation.
@@ -9,7 +8,8 @@ providing a single entry point for comprehensive validation.
 import argparse
 import json
 import os
-import subprocess
+import shutil
+import subprocess  # nosec B404: import of 'subprocess'
 import sys
 import time
 from dataclasses import dataclass
@@ -44,6 +44,12 @@ class TestSuiteRunner:
     """Orchestrates comprehensive testing of the modular workflow system."""
 
     def __init__(self, root_path: Path, github_token: Optional[str] = None):
+        """Initialize the test suite runner.
+
+        Args:
+            root_path: Root path of the project
+            github_token: Optional GitHub token for API access
+        """
         self.root_path = root_path
         self.github_token = github_token
         self.results: List[TestSuiteResult] = []
@@ -125,7 +131,7 @@ class TestSuiteRunner:
             return False
 
         try:
-            result = subprocess.run([sys.executable, str(validator_script), "--root", str(self.root_path)], capture_output=True, text=True, cwd=self.root_path, timeout=300)
+            result = subprocess.run([sys.executable, str(validator_script), "--root", str(self.root_path)], capture_output=True, text=True, cwd=self.root_path, timeout=300, shell=False)  # nosec
 
             print("Validation Output:")
             print(result.stdout)
@@ -168,7 +174,8 @@ class TestSuiteRunner:
                 text=True,
                 cwd=self.root_path,
                 timeout=600,
-            )
+                shell=False,
+            )  # nosec
 
             print("Integration Test Output:")
             print(result.stdout)
@@ -211,7 +218,8 @@ class TestSuiteRunner:
                 text=True,
                 cwd=self.root_path,
                 timeout=900,
-            )
+                shell=False,
+            )  # nosec
 
             print("Workflow Test Output:")
             print(result.stdout)
@@ -241,7 +249,9 @@ class TestSuiteRunner:
 
         try:
             # Run migration in dry-run mode
-            result = subprocess.run([sys.executable, str(migration_script), "--root", str(self.root_path), "--dry-run"], capture_output=True, text=True, cwd=self.root_path, timeout=300)
+            result = subprocess.run(
+                [sys.executable, str(migration_script), "--root", str(self.root_path), "--dry-run"], capture_output=True, text=True, cwd=self.root_path, timeout=300, shell=False
+            )  # nosec
 
             print("Migration Test Output:")
             print(result.stdout)
@@ -262,7 +272,10 @@ class TestSuiteRunner:
     def _detect_repository_info(self) -> Tuple[Optional[str], Optional[str]]:
         """Detect repository owner and name from git remote."""
         try:
-            result = subprocess.run(["git", "remote", "get-url", "origin"], capture_output=True, text=True, cwd=self.root_path, timeout=30)
+            git_path = shutil.which("git")
+            if not git_path:
+                raise FileNotFoundError("git executable not found in PATH")
+            result = subprocess.run([git_path, "remote", "get-url", "origin"], capture_output=True, text=True, cwd=self.root_path, timeout=30, shell=False)  # nosec
 
             if result.returncode == 0:
                 repo_url = result.stdout.strip()
@@ -303,7 +316,7 @@ class TestSuiteRunner:
         print(f"Total Duration: {total_duration:.2f}s")
 
         # Show individual suite results
-        print(f"\n[TEST SUITE RESULTS]:")
+        print("\n[TEST SUITE RESULTS]:")
         for result in self.results:
             status = "[PASS]" if result.passed else "[FAIL]"
             print(f"  {status} {result.suite.value.upper()} ({result.duration:.2f}s)")
@@ -358,7 +371,7 @@ class TestSuiteRunner:
 
 
 def main():
-    """Main entry point for test suite runner."""
+    """Run the test suite runner."""
     parser = argparse.ArgumentParser(
         description="GraphBit Comprehensive Test Suite Runner",
         formatter_class=argparse.RawDescriptionHelpFormatter,

@@ -1,21 +1,19 @@
 #!/usr/bin/env python3
-"""
-Build Runner for GraphBit CI/CD Pipeline
+"""Build Runner for GraphBit CI/CD Pipeline.
 
 This script handles artifact building, wheel generation, and packaging
 for multiple platforms and architectures.
 """
 
 import argparse
-import os
 import shutil
-import subprocess
+import subprocess  # nosec B404: import of 'subprocess'
 import sys
 import time
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import List, Optional, Tuple
 
 
 @dataclass
@@ -34,6 +32,13 @@ class BuildRunner:
     """Runs comprehensive build operations."""
 
     def __init__(self, root_path: Path, platform: str = "ubuntu-latest", target: str = "x86_64"):
+        """Initialize the build runner.
+
+        Args:
+            root_path: Root path of the project
+            platform: Target platform for builds
+            target: Target architecture
+        """
         self.root_path = root_path
         self.platform = platform
         self.target = target
@@ -96,7 +101,10 @@ class BuildRunner:
     def _build_rust_library(self) -> Tuple[bool, List[str], str, Optional[str]]:
         """Build Rust library."""
         try:
-            result = subprocess.run(["cargo", "build", "--workspace", "--release"], capture_output=True, text=True, cwd=self.root_path, timeout=900)
+            cargo_path = shutil.which("cargo")
+            if not cargo_path:
+                raise FileNotFoundError("cargo executable not found in PATH")
+            result = subprocess.run([cargo_path, "build", "--workspace", "--release"], capture_output=True, text=True, cwd=self.root_path, timeout=900, shell=False)  # nosec
 
             artifacts = []
             if result.returncode == 0:
@@ -118,7 +126,10 @@ class BuildRunner:
         """Build Python extension."""
         try:
             # Install maturin if not available
-            install_result = subprocess.run(["python", "-m", "pip", "install", "maturin"], capture_output=True, text=True, cwd=self.root_path, timeout=300)
+            python_path = shutil.which("python")
+            if not python_path:
+                raise FileNotFoundError("python executable not found in PATH")
+            install_result = subprocess.run([python_path, "-m", "pip", "install", "maturin"], capture_output=True, text=True, cwd=self.root_path, timeout=300, shell=False)  # nosec
 
             if install_result.returncode != 0:
                 return False, [], install_result.stdout, f"Failed to install maturin: {install_result.stderr}"
@@ -128,7 +139,10 @@ class BuildRunner:
             if not python_dir.exists():
                 return True, [], "No Python directory found, skipping Python extension build", None
 
-            result = subprocess.run(["maturin", "build", "--release", "--out", "../dist"], capture_output=True, text=True, cwd=python_dir, timeout=900)
+            maturin_path = shutil.which("maturin")
+            if not maturin_path:
+                raise FileNotFoundError("maturin executable not found in PATH")
+            result = subprocess.run([maturin_path, "build", "--release", "--out", "../dist"], capture_output=True, text=True, cwd=python_dir, timeout=900, shell=False)  # nosec
 
             artifacts = []
             if result.returncode == 0:
@@ -152,7 +166,10 @@ class BuildRunner:
                 return True, [], "No Python directory found, skipping wheel build", None
 
             # Use maturin to build wheels
-            result = subprocess.run(["maturin", "build", "--release", "--out", "../dist", "--find-interpreter"], capture_output=True, text=True, cwd=python_dir, timeout=1200)
+            maturin_path = shutil.which("maturin")
+            if not maturin_path:
+                raise FileNotFoundError("maturin executable not found in PATH")
+            result = subprocess.run([maturin_path, "build", "--release", "--out", "../dist", "--find-interpreter"], capture_output=True, text=True, cwd=python_dir, timeout=1200, shell=False)  # nosec
 
             artifacts = []
             if result.returncode == 0:
@@ -176,7 +193,10 @@ class BuildRunner:
                 return True, [], "No Python directory found, skipping source distribution", None
 
             # Build source distribution
-            result = subprocess.run(["maturin", "sdist", "--out", "../dist"], capture_output=True, text=True, cwd=python_dir, timeout=300)
+            maturin_path = shutil.which("maturin")
+            if not maturin_path:
+                raise FileNotFoundError("maturin executable not found in PATH")
+            result = subprocess.run([maturin_path, "sdist", "--out", "../dist"], capture_output=True, text=True, cwd=python_dir, timeout=300, shell=False)  # nosec
 
             artifacts = []
             if result.returncode == 0:
@@ -195,7 +215,10 @@ class BuildRunner:
     def _build_documentation(self) -> Tuple[bool, List[str], str, Optional[str]]:
         """Build documentation."""
         try:
-            result = subprocess.run(["cargo", "doc", "--workspace", "--no-deps"], capture_output=True, text=True, cwd=self.root_path, timeout=600)
+            cargo_path = shutil.which("cargo")
+            if not cargo_path:
+                raise FileNotFoundError("cargo executable not found in PATH")
+            result = subprocess.run([cargo_path, "doc", "--workspace", "--no-deps"], capture_output=True, text=True, cwd=self.root_path, timeout=600, shell=False)  # nosec
 
             artifacts = []
             if result.returncode == 0:
@@ -219,7 +242,7 @@ class BuildRunner:
 
             # Check dist directory
             if self.dist_dir.exists():
-                output_lines.append(f"Dist directory contents:")
+                output_lines.append("Dist directory contents:")
                 for item in self.dist_dir.iterdir():
                     size = item.stat().st_size if item.is_file() else 0
                     output_lines.append(f"  {item.name} ({size} bytes)")
@@ -228,11 +251,18 @@ class BuildRunner:
                     if item.suffix == ".whl":
                         try:
                             # Try to install and test the wheel
-                            test_result = subprocess.run(["python", "-m", "pip", "install", "--force-reinstall", "--no-deps", str(item)], capture_output=True, text=True, timeout=120)
+                            python_path = shutil.which("python")
+                            if not python_path:
+                                raise FileNotFoundError("python executable not found in PATH")
+                            test_result = subprocess.run(
+                                [python_path, "-m", "pip", "install", "--force-reinstall", "--no-deps", str(item)], capture_output=True, text=True, timeout=120, shell=False
+                            )  # nosec
 
                             if test_result.returncode == 0:
                                 # Try to import the package
-                                import_result = subprocess.run(["python", "-c", 'import graphbit; print(f"GraphBit version: {graphbit.version()}")'], capture_output=True, text=True, timeout=30)
+                                import_result = subprocess.run(
+                                    [python_path, "-c", 'import graphbit; print(f"GraphBit version: {graphbit.version()}")'], capture_output=True, text=True, timeout=30, shell=False
+                                )  # nosec
 
                                 if import_result.returncode == 0:
                                     verified_artifacts.append(str(item))
@@ -243,14 +273,14 @@ class BuildRunner:
                                 output_lines.append(f"    ❌ Wheel installation failed: {test_result.stderr}")
 
                         except subprocess.TimeoutExpired:
-                            output_lines.append(f"    ⏰ Wheel verification timed out")
+                            output_lines.append("    ⏰ Wheel verification timed out")
                         except Exception as e:
                             output_lines.append(f"    ❌ Wheel verification error: {e}")
 
             # Check target directory
             target_dir = self.root_path / "target" / "release"
             if target_dir.exists():
-                output_lines.append(f"\nTarget directory contents:")
+                output_lines.append("\nTarget directory contents:")
                 for item in target_dir.iterdir():
                     if item.is_file():
                         size = item.stat().st_size
@@ -293,7 +323,7 @@ class BuildRunner:
 
         # List all artifacts
         if total_artifacts > 0:
-            print(f"\n📦 Built Artifacts:")
+            print("\n📦 Built Artifacts:")
             for result in self.results:
                 if result.artifacts:
                     print(f"  {result.name}:")
@@ -330,7 +360,7 @@ class BuildRunner:
 
 
 def main():
-    """Main entry point for build runner."""
+    """Run the build runner."""
     parser = argparse.ArgumentParser(description="GraphBit Build Runner", formatter_class=argparse.RawDescriptionHelpFormatter)
 
     parser.add_argument("--root", type=Path, default=Path.cwd(), help="Root directory of the project")
