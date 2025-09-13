@@ -173,17 +173,17 @@ GraphBit is built by a wonderful community of researchers and engineers.
                 </a>
             </td>
             <td align="center">
-                <a href="https://github.com/jj-devhub">
-                    <img src="https://avatars.githubusercontent.com/u/207973556?v=4" width="64;" alt="jj-devhub"/>
-                    <br />
-                    <sub><b>Jaid Jashim</b></sub>
-                </a>
-            </td>
-            <td align="center">
                 <a href="https://github.com/tanimahossain-infiniti">
                     <img src="https://avatars.githubusercontent.com/u/204321623?v=4" width="64;" alt="tanimahossain-infiniti"/>
                     <br />
                     <sub><b>tanimahossain-infiniti</b></sub>
+                </a>
+            </td>
+            <td align="center">
+                <a href="https://github.com/jj-devhub">
+                    <img src="https://avatars.githubusercontent.com/u/207973556?v=4" width="64;" alt="jj-devhub"/>
+                    <br />
+                    <sub><b>Jaid Jashim</b></sub>
                 </a>
             </td>
             <td align="center">
