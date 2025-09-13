@@ -8,7 +8,7 @@
 
 <!-- Added placeholders for links, fill it up when the corresponding links are available. -->
 <p align="center">
-    <a href="https://graphbit.ai/">Website</a> |
+    <a href="https://graphbit.ai/">Website</a> | 
     <a href="https://docs.graphbit.ai/">Docs</a> |
     <a href="https://discord.gg/8TvUK6uf">Discord</a>
     <br /><br />
@@ -16,7 +16,6 @@
 
 [![Build Status](https://img.shields.io/github/actions/workflow/status/InfinitiBit/graphbit/update-docs.yml?branch=main)](https://github.com/InfinitiBit/graphbit/actions/workflows/update-docs.yml)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](https://github.com/InfinitiBit/graphbit/blob/main/CONTRIBUTING.md)
-[![Test Coverage](https://img.shields.io/badge/Coverage-81%25-brightgreen)](https://github.com/InfinitiBit/graphbit)
 [![Rust Version](https://img.shields.io/badge/rust-1.70+-blue.svg)](https://www.rust-lang.org)
 [![Python Version](https://img.shields.io/badge/python-3.10--3.13-blue.svg)](https://www.python.org)
 
@@ -42,31 +41,38 @@ Designed to run **multi-agent workflows in parallel**, Graphbit persists memory 
 ##  Quick Start
 
 ### Installation
-
-**Prerequisites:**
-- Rust 1.70+
-- Python 3.10-3.13
-- Poetry (for dependency management)
-
-**Install Rust:**
-- **Linux/macOS**:
+Clone the repository
 ```bash
-curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh && source $HOME/.cargo/env
+git clone https://github.com/InfinitiBit/graphbit.git
+cd graphbit
 ```
-- **Windows**: Download & run [rustup-init.exe](https://win.rustup.rs/x86_64)
 
-**Install Poetry:**
+Install Rust
+- **Linux/macOS**: 
+```bash
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh && source $HOME/.cargo/env`
+```  
+- **Windows**: Download & run [rustup-init.exe](https://win.rustup.rs/x86_64)  
+
+Install Poetry
 ```bash
 curl -sSL https://install.python-poetry.org | python3 -
 ```
 
-**Build from source:**
+Set up poetry environment, then install dependencies
 ```bash
-git clone https://github.com/InfinitiBit/graphbit.git
-cd graphbit/
-cargo build --release
-poetry env use python3.11   # Supports python 3.10 to 3.13
+poetry env use python3.11   # Supports from python 3.10 to 3.13
+source $(poetry env info --path)/bin/activate
 poetry install --no-root
+```
+
+Build from source
+```bash
+cargo build --release
+```
+
+Build Python bindings
+```bash
 cd python/
 maturin develop --release
 ```
@@ -83,6 +89,7 @@ export ANTHROPIC_API_KEY=your_anthropic_api_key_here
 ### Basic Usage
 ```python
 import os
+
 from graphbit import LlmConfig, Executor, Workflow, Node, tool
 
 # Initialize and configure
