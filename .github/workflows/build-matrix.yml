@@ -59,13 +59,20 @@ jobs:
         if: matrix.cross == true && matrix.target == 'aarch64-unknown-linux-gnu'
         run: |
           sudo apt-get update
-          sudo apt-get install -y gcc-aarch64-linux-gnu libssl-dev:arm64
+          sudo dpkg --add-architecture arm64
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu
 
       - name: Install system dependencies (Linux)
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
           sudo apt-get install -y libssl-dev pkg-config
+
+      - name: Install musl dependencies
+        if: matrix.target == 'x86_64-unknown-linux-musl'
+        run: |
+          sudo apt-get install -y musl-tools musl-dev
 
       - name: Install system dependencies (macOS)
         if: runner.os == 'macOS'
@@ -89,7 +96,14 @@ jobs:
           key: ${{ runner.os }}-${{ matrix.target }}-cargo-${{ hashFiles('**/Cargo.lock') }}
 
       - name: Build (native)
-        if: matrix.cross != true
+        if: matrix.cross != true && matrix.target != 'x86_64-unknown-linux-musl'
+        run: cargo build --release --target ${{ matrix.target }}
+
+      - name: Build (musl)
+        if: matrix.target == 'x86_64-unknown-linux-musl'
+        env:
+          OPENSSL_STATIC: 1
+          OPENSSL_DIR: /usr
         run: cargo build --release --target ${{ matrix.target }}
 
       - name: Build (cross-compilation)
@@ -189,8 +203,7 @@ jobs:
         if: runner.os == 'Windows' && matrix.cross == true
         run: |
           cd python
-          # Note: Cross-compilation for Windows ARM64 may require additional setup
-          maturin build --release --target ${{ matrix.target }} --out ../dist
+          maturin build --release --target ${{ matrix.target }} --out ../dist --interpreter python
 
       - name: Upload wheels
         uses: actions/upload-artifact@v4
