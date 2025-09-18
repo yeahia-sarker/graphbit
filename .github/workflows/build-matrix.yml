@@ -23,29 +23,22 @@ jobs:
           # Linux targets
           - target: x86_64-unknown-linux-gnu
             os: ubuntu-latest
-            cross: false
           - target: aarch64-unknown-linux-gnu
-            os: ubuntu-latest
-            cross: true
+            os: ubuntu-latest-arm64
           - target: x86_64-unknown-linux-musl
             os: ubuntu-latest
-            cross: true
 
           # Windows targets
           - target: x86_64-pc-windows-msvc
             os: windows-latest
-            cross: false
           - target: aarch64-pc-windows-msvc
-            os: windows-latest
-            cross: false
+            os: windows-latest-arm64
 
           # macOS targets
           - target: x86_64-apple-darwin
-            os: macos-latest
-            cross: false
+            os: macos-13  # Intel-based macOS
           - target: aarch64-apple-darwin
-            os: macos-latest
-            cross: false
+            os: macos-latest  # Apple Silicon macOS
 
     steps:
       - uses: actions/checkout@v4
@@ -56,8 +49,9 @@ jobs:
           targets: ${{ matrix.target }}
 
       - name: Install system dependencies (Linux)
-        if: runner.os == 'Linux' && !matrix.cross
+        if: runner.os == 'Linux'
         run: |
+          sudo apt-get update
           sudo apt-get install -y libssl-dev pkg-config
 
       - name: Install system dependencies (macOS)
@@ -66,10 +60,11 @@ jobs:
           brew install openssl pkg-config
           echo "PKG_CONFIG_PATH=$(brew --prefix openssl)/lib/pkgconfig" >> $GITHUB_ENV
 
-      - name: Install cross-compilation tools
-        if: matrix.cross
+      - name: Install system dependencies (Windows)
+        if: runner.os == 'Windows'
         run: |
-          cargo install cross --git https://github.com/cross-rs/cross
+          # Windows dependencies are typically handled by vcpkg or pre-installed
+          echo "Windows dependencies ready"
 
       - name: Cache dependencies
         uses: actions/cache@v4
@@ -81,15 +76,9 @@ jobs:
           key: ${{ runner.os }}-${{ matrix.target }}-cargo-${{ hashFiles('**/Cargo.lock') }}
 
       - name: Build (native)
-        if: '!matrix.cross'
         run: cargo build --release --target ${{ matrix.target }}
 
-      - name: Build (cross)
-        if: matrix.cross
-        run: cross build --release --target ${{ matrix.target }}
-
-      - name: Test (native only)
-        if: '!matrix.cross'
+      - name: Test (native)
         run: cargo test --release --target ${{ matrix.target }}
 
       - name: Upload artifacts
@@ -113,14 +102,16 @@ jobs:
             os: ubuntu-latest
             manylinux: auto
           - target: aarch64-unknown-linux-gnu
-            os: ubuntu-latest
+            os: ubuntu-latest-arm64
             manylinux: auto
           - target: x86_64-pc-windows-msvc
             os: windows-latest
+          - target: aarch64-pc-windows-msvc
+            os: windows-latest-arm64
           - target: x86_64-apple-darwin
-            os: macos-latest
+            os: macos-13  # Intel-based macOS
           - target: aarch64-apple-darwin
-            os: macos-latest
+            os: macos-latest  # Apple Silicon macOS
 
     steps:
       - uses: actions/checkout@v4
@@ -144,34 +135,27 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libssl-dev pkg-config
 
-      - name: Build wheels (Linux)
-        if: runner.os == 'Linux'
+      - name: Build wheels (Linux x86_64)
+        if: runner.os == 'Linux' && matrix.target == 'x86_64-unknown-linux-gnu'
         uses: PyO3/maturin-action@v1
         with:
           target: ${{ matrix.target }}
-          args: --release --out dist --find-interpreter
-          working-directory: python
+          args: --release --out dist --find-interpreter --manifest-path python/Cargo.toml
           sccache: 'true'
           manylinux: ${{ matrix.manylinux }}
           before-script-linux: |
-            # Install OpenSSL development libraries using available package manager
-            if command -v yum >/dev/null 2>&1; then
-              yum install -y openssl-devel
-            elif command -v dnf >/dev/null 2>&1; then
-              dnf install -y openssl-devel
-            elif command -v apt-get >/dev/null 2>&1; then
-              apt-get update && apt-get install -y libssl-dev
-            elif command -v apk >/dev/null 2>&1; then
-              apk add --no-cache openssl-dev
-            else
-              echo "No supported package manager found"
-              exit 1
-            fi
+            yum install -y openssl-devel
+
+      - name: Build wheels (Linux ARM64)
+        if: runner.os == 'Linux' && matrix.target == 'aarch64-unknown-linux-gnu'
+        run: |
+          cd python
+          maturin build --release --target ${{ matrix.target }} --out ../dist
 
       - name: Build wheels (Windows/macOS)
         if: runner.os != 'Linux'
-        working-directory: python
         run: |
+          cd python
           maturin build --release --target ${{ matrix.target }} --out ../dist
 
       - name: Upload wheels
