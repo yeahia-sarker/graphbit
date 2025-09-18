@@ -24,7 +24,8 @@ jobs:
           - target: x86_64-unknown-linux-gnu
             os: ubuntu-latest
           - target: aarch64-unknown-linux-gnu
-            os: ubuntu-latest-arm64
+            os: ubuntu-latest
+            cross: true
           - target: x86_64-unknown-linux-musl
             os: ubuntu-latest
 
@@ -32,7 +33,8 @@ jobs:
           - target: x86_64-pc-windows-msvc
             os: windows-latest
           - target: aarch64-pc-windows-msvc
-            os: windows-latest-arm64
+            os: windows-latest
+            cross: true
 
           # macOS targets
           - target: x86_64-apple-darwin
@@ -47,6 +49,11 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
+
+      - name: Install cross-compilation tools
+        if: matrix.cross == true
+        run: |
+          cargo install cross --git https://github.com/cross-rs/cross
 
       - name: Install system dependencies (Linux)
         if: runner.os == 'Linux'
@@ -76,9 +83,15 @@ jobs:
           key: ${{ runner.os }}-${{ matrix.target }}-cargo-${{ hashFiles('**/Cargo.lock') }}
 
       - name: Build (native)
+        if: matrix.cross != true
         run: cargo build --release --target ${{ matrix.target }}
 
-      - name: Test (native)
+      - name: Build (cross-compilation)
+        if: matrix.cross == true
+        run: cross build --release --target ${{ matrix.target }}
+
+      - name: Test (native only)
+        if: matrix.cross != true
         run: cargo test --release --target ${{ matrix.target }}
 
       - name: Upload artifacts
@@ -102,12 +115,14 @@ jobs:
             os: ubuntu-latest
             manylinux: auto
           - target: aarch64-unknown-linux-gnu
-            os: ubuntu-latest-arm64
+            os: ubuntu-latest
             manylinux: auto
+            cross: true
           - target: x86_64-pc-windows-msvc
             os: windows-latest
           - target: aarch64-pc-windows-msvc
-            os: windows-latest-arm64
+            os: windows-latest
+            cross: true
           - target: x86_64-apple-darwin
             os: macos-13  # Intel-based macOS
           - target: aarch64-apple-darwin
@@ -148,14 +163,24 @@ jobs:
 
       - name: Build wheels (Linux ARM64)
         if: runner.os == 'Linux' && matrix.target == 'aarch64-unknown-linux-gnu'
+        uses: PyO3/maturin-action@v1
+        with:
+          target: ${{ matrix.target }}
+          args: --release --out dist --find-interpreter --manifest-path python/Cargo.toml
+          sccache: 'true'
+          manylinux: ${{ matrix.manylinux }}
+
+      - name: Build wheels (Windows/macOS native)
+        if: runner.os != 'Linux' && matrix.cross != true
         run: |
           cd python
           maturin build --release --target ${{ matrix.target }} --out ../dist
 
-      - name: Build wheels (Windows/macOS)
-        if: runner.os != 'Linux'
+      - name: Build wheels (Windows ARM64 cross-compilation)
+        if: runner.os == 'Windows' && matrix.cross == true
         run: |
           cd python
+          # Note: Cross-compilation for Windows ARM64 may require additional setup
           maturin build --release --target ${{ matrix.target }} --out ../dist
 
       - name: Upload wheels
