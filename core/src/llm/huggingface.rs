@@ -7,6 +7,7 @@ use async_trait::async_trait;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::fmt::Write;
 
 /// `HuggingFace` API provider
 pub struct HuggingFaceProvider {
@@ -43,8 +44,7 @@ impl HuggingFaceProvider {
     }
 
     /// Convert `GraphBit` messages to `HuggingFace` chat format
-    fn format_messages_for_chat(&self, messages: &[LlmMessage]) -> String {
-        use std::fmt::Write;
+    fn format_messages_for_chat(messages: &[LlmMessage]) -> String {
         let mut formatted = String::new();
 
         for message in messages {
@@ -114,7 +114,7 @@ impl LlmProviderTrait for HuggingFaceProvider {
         let url = format!("{}/{}", self.base_url, self.model);
 
         // Format messages for `HuggingFace`
-        let inputs = self.format_messages_for_chat(&request.messages);
+        let inputs = Self::format_messages_for_chat(&request.messages);
 
         let mut parameters = HashMap::new();
         if let Some(max_tokens) = request.max_tokens {
@@ -203,7 +203,7 @@ impl LlmProviderTrait for HuggingFaceProvider {
     }
 
     fn cost_per_token(&self) -> Option<(f64, f64)> {
-        // HuggingFace inference API pricing varies by model
+        // `HuggingFace` inference API pricing varies by model
         // This would need to be updated based on actual pricing
         Some((0.0001, 0.0001)) // Placeholder values
     }
