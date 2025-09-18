@@ -55,6 +55,12 @@ jobs:
         run: |
           cargo install cross --git https://github.com/cross-rs/cross
 
+      - name: Install cross-compilation dependencies (ARM64)
+        if: matrix.cross == true && matrix.target == 'aarch64-unknown-linux-gnu'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu libssl-dev:arm64
+
       - name: Install system dependencies (Linux)
         if: runner.os == 'Linux'
         run: |
@@ -169,6 +175,9 @@ jobs:
           args: --release --out dist --find-interpreter --manifest-path python/Cargo.toml
           sccache: 'true'
           manylinux: ${{ matrix.manylinux }}
+          before-script-linux: |
+            yum install -y openssl-devel
+            export PKG_CONFIG_ALLOW_CROSS=1
 
       - name: Build wheels (Windows/macOS native)
         if: runner.os != 'Linux' && matrix.cross != true
